@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CHUNK_SIZE, DRAW_DISTANCE, chunkCenter, chunkIndex, isChunkInRange } from "./chunkCull";
 import { FLIGHT } from "./physics";
 
 const GROUND_Y = 0;
@@ -35,7 +36,7 @@ export const createFlightWorld = (container) => {
   scene.background = new THREE.Color(0x87b7e0);
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2800);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, DRAW_DISTANCE + 80);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.domElement.style.display = "block";
@@ -48,13 +49,18 @@ export const createFlightWorld = (container) => {
   sun.position.set(80, 140, 40);
   scene.add(sun);
 
+  const { chunks, add } = createChunkIndex();
   scene.add(createGround());
-  scene.add(createFields());
-  scene.add(createMountains());
-  scene.add(createRivers());
-  scene.add(createRoads());
-  scene.add(createAirport());
-  scene.add(createTrees());
+  createFields(add);
+  createMountains(add);
+  createRivers(add);
+  createRoads(add);
+  add(createAirport());
+  createTrees(add);
+  chunks.forEach((chunk) => {
+    chunk.updateMatrixWorld(true);
+    scene.add(chunk);
+  });
 
   const aircraft = createGyrocopter();
   scene.add(aircraft);
@@ -63,6 +69,9 @@ export const createFlightWorld = (container) => {
   const chaseLocal = new THREE.Vector3(0, 1.55, 7.2);
   const focusLocal = new THREE.Vector3(0, 0.4, -0.15);
   const cameraUp = new THREE.Vector3();
+  const frustum = new THREE.Frustum();
+  const projScreen = new THREE.Matrix4();
+  const chunkSphere = new THREE.Sphere();
 
   const setSize = () => {
     const width = container.clientWidth || 1;
@@ -94,10 +103,31 @@ export const createFlightWorld = (container) => {
     cameraUp.set(0, 1, 0).transformDirection(aircraft.matrixWorld);
     camera.up.copy(cameraUp);
     camera.lookAt(lookAt);
+    camera.updateMatrixWorld();
+    projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(projScreen);
+    for (const chunk of chunks) {
+      const bounds = chunk.userData.cull;
+      if (!isChunkInRange(camera.position, bounds)) {
+        chunk.visible = false;
+        continue;
+      }
+      chunkSphere.center.set(bounds.x, bounds.y, bounds.z);
+      chunkSphere.radius = bounds.radius;
+      chunk.visible = frustum.intersectsSphere(chunkSphere);
+    }
     renderer.render(scene, camera);
   };
 
   const dispose = () => {
+    scene.traverse((object) => {
+      object.geometry?.dispose?.();
+      const materials = object.material ? [].concat(object.material) : [];
+      materials.forEach((material) => {
+        material.map?.dispose?.();
+        material.dispose?.();
+      });
+    });
     renderer.dispose();
     renderer.domElement.remove();
   };
@@ -126,7 +156,36 @@ const createGround = () => {
   return group;
 };
 
-const addPolyline = (group, points, { width, y, color, depth = 0.1 }) => {
+const createChunkIndex = () => {
+  const chunks = [];
+  const byKey = new Map();
+  const get = (x, z) => {
+    const [ix, iz] = chunkIndex(x, z);
+    const key = `${ix},${iz}`;
+    let chunk = byKey.get(key);
+    if (!chunk) {
+      const center = chunkCenter(ix, iz);
+      chunk = new THREE.Group();
+      chunk.name = `chunk:${key}`;
+      chunk.matrixWorldAutoUpdate = false;
+      chunk.userData.cull = {
+        x: center.x,
+        y: 40,
+        z: center.z,
+        radius: CHUNK_SIZE * 0.75 + 140,
+      };
+      byKey.set(key, chunk);
+      chunks.push(chunk);
+    }
+    return chunk;
+  };
+  const add = (object) => {
+    get(object.position.x, object.position.z).add(object);
+  };
+  return { chunks, add, get };
+};
+
+const addPolyline = (add, points, { width, y, color, depth = 0.1 }) => {
   const material = new THREE.MeshLambertMaterial({ color });
   for (let i = 0; i < points.length - 1; i += 1) {
     const [ax, az] = points[i];
@@ -140,11 +199,11 @@ const addPolyline = (group, points, { width, y, color, depth = 0.1 }) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, depth, length + 0.6), material);
     mesh.position.set((ax + bx) / 2, y, (az + bz) / 2);
     mesh.rotation.y = Math.atan2(dx, dz);
-    group.add(mesh);
+    add(mesh);
   }
 };
 
-const addDashes = (group, points, { width, length, gap, y, color }) => {
+const addDashes = (add, points, { width, length, gap, y, color }) => {
   const material = new THREE.MeshLambertMaterial({ color });
   for (let i = 0; i < points.length - 1; i += 1) {
     const [ax, az] = points[i];
@@ -162,13 +221,12 @@ const addDashes = (group, points, { width, length, gap, y, color }) => {
       const dash = new THREE.Mesh(new THREE.BoxGeometry(width, 0.12, length), material);
       dash.position.set(ax + ux * along, y, az + uz * along);
       dash.rotation.y = Math.atan2(dx, dz);
-      group.add(dash);
+      add(dash);
     }
   }
 };
 
-const createFields = () => {
-  const group = new THREE.Group();
+const createFields = (add) => {
   const plots = [
     [180, 260, 70, 48, colors.field],
     [280, 250, 62, 40, colors.wheat],
@@ -185,18 +243,17 @@ const createFields = () => {
     );
     field.rotation.x = -Math.PI / 2;
     field.position.set(x, 0.03, z);
-    group.add(field);
+    add(field);
   });
-  return group;
 };
 
-const addMountain = (group, x, z, height, radius, rockColor) => {
+const addMountain = (add, x, z, height, radius, rockColor) => {
   const rock = new THREE.Mesh(
     new THREE.ConeGeometry(radius, height, 8),
     new THREE.MeshLambertMaterial({ color: rockColor })
   );
   rock.position.set(x, height / 2, z);
-  group.add(rock);
+  add(rock);
   if (height > 72) {
     const snowHeight = height * 0.34;
     const snow = new THREE.Mesh(
@@ -204,13 +261,11 @@ const addMountain = (group, x, z, height, radius, rockColor) => {
       new THREE.MeshLambertMaterial({ color: colors.snow })
     );
     snow.position.set(x, height - snowHeight * 0.45, z);
-    group.add(snow);
+    add(snow);
   }
 };
 
-const createMountains = () => {
-  const group = new THREE.Group();
-  group.name = "mountains";
+const createMountains = (add) => {
   const peaks = [
     [-420, -80, 95, 70, colors.rock],
     [-510, 40, 128, 88, colors.rockWarm],
@@ -242,7 +297,7 @@ const createMountains = () => {
     [20, 860, 94, 68, colors.rockWarm],
   ];
   peaks.forEach(([x, z, height, radius, color]) => {
-    addMountain(group, x, z, height, radius, color);
+    addMountain(add, x, z, height, radius, color);
   });
 
   const foothills = [
@@ -251,9 +306,8 @@ const createMountains = () => {
     [-120, -480, 30, 34], [160, -500, 26, 30], [40, 460, 18, 24],
   ];
   foothills.forEach(([x, z, height, radius]) => {
-    addMountain(group, x, z, height, radius, colors.rock);
+    addMountain(add, x, z, height, radius, colors.rock);
   });
-  return group;
 };
 
 const RIVER = [
@@ -267,13 +321,11 @@ const TRIBUTARY = [
   [210, 120], [90, 250], [-80, 300], [-210, 320],
 ];
 
-const createRivers = () => {
-  const group = new THREE.Group();
-  group.name = "rivers";
-  addPolyline(group, RIVER, { width: 18, y: 0.04, color: colors.bank, depth: 0.08 });
-  addPolyline(group, RIVER, { width: 11, y: 0.08, color: colors.water, depth: 0.1 });
-  addPolyline(group, TRIBUTARY, { width: 12, y: 0.04, color: colors.bank, depth: 0.08 });
-  addPolyline(group, TRIBUTARY, { width: 7, y: 0.08, color: colors.waterDeep, depth: 0.1 });
+const createRivers = (add) => {
+  addPolyline(add, RIVER, { width: 18, y: 0.04, color: colors.bank, depth: 0.08 });
+  addPolyline(add, RIVER, { width: 11, y: 0.08, color: colors.water, depth: 0.1 });
+  addPolyline(add, TRIBUTARY, { width: 12, y: 0.04, color: colors.bank, depth: 0.08 });
+  addPolyline(add, TRIBUTARY, { width: 7, y: 0.08, color: colors.waterDeep, depth: 0.1 });
 
   const lake = new THREE.Mesh(
     new THREE.CircleGeometry(38, 24),
@@ -281,8 +333,7 @@ const createRivers = () => {
   );
   lake.rotation.x = -Math.PI / 2;
   lake.position.set(-210, 0.09, 320);
-  group.add(lake);
-  return group;
+  add(lake);
 };
 
 const HIGHWAY = [
@@ -298,25 +349,22 @@ const RIVER_ROAD = [
   [-120, 40], [-90, 180], [-70, 320], [-20, 470], [80, 580], [220, 690],
 ];
 
-const createRoads = () => {
-  const group = new THREE.Group();
-  group.name = "roads";
+const createRoads = (add) => {
   const routes = [HIGHWAY, ACCESS, NORTH_ROAD, RIVER_ROAD];
   routes.forEach((points, index) => {
     const width = index === 0 ? 13 : 8;
-    addPolyline(group, points, { width: width + 1.6, y: 0.05, color: colors.roadEdge, depth: 0.08 });
-    addPolyline(group, points, { width, y: 0.09, color: colors.road, depth: 0.1 });
+    addPolyline(add, points, { width: width + 1.6, y: 0.05, color: colors.roadEdge, depth: 0.08 });
+    addPolyline(add, points, { width, y: 0.09, color: colors.road, depth: 0.1 });
   });
-  addDashes(group, HIGHWAY, { width: 0.45, length: 8, gap: 10, y: 0.16, color: colors.marking });
-  addDashes(group, ACCESS, { width: 0.28, length: 5, gap: 7, y: 0.16, color: colors.marking });
+  addDashes(add, HIGHWAY, { width: 0.45, length: 8, gap: 10, y: 0.16, color: colors.marking });
+  addDashes(add, ACCESS, { width: 0.28, length: 5, gap: 7, y: 0.16, color: colors.marking });
 
   const bridge = new THREE.Mesh(
     new THREE.BoxGeometry(16, 1.4, 36),
     new THREE.MeshLambertMaterial({ color: 0x57534e })
   );
   bridge.position.set(-210, 1.1, 310);
-  group.add(bridge);
-  return group;
+  add(bridge);
 };
 
 const createAirport = () => {
@@ -421,8 +469,7 @@ const createAirportSign = () => {
   return sign;
 };
 
-const createTrees = () => {
-  const group = new THREE.Group();
+const createTrees = (add) => {
   const spots = [
     [90, 40], [120, -30], [80, -160], [-90, -40], [-130, 20],
     [-70, -180], [140, 90], [-150, -90], [60, 200], [-40, -260],
@@ -445,9 +492,9 @@ const createTrees = () => {
       new THREE.MeshLambertMaterial({ color: index % 3 === 0 ? colors.pine : colors.tree })
     );
     leaves.position.set(x, 3 + height / 2, z);
-    group.add(trunk, leaves);
+    add(trunk);
+    add(leaves);
   });
-  return group;
 };
 
 const createGyrocopter = () => {
