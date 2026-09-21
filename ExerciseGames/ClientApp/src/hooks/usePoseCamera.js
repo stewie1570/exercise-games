@@ -7,13 +7,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const emptyPose = {
   detected: false,
   head: { tiltDeg: null, turnDeg: null, pitchDeg: null },
+  body: { tiltDeg: null },
   leftArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
   rightArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
 };
 
 const UI_UPDATE_MS = 100;
 
-export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
+export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart = false }) => {
   const landmarkerRef = useRef(null);
   const smootherRef = useRef(new PoseSmoother());
   const overlayRef = useRef(null);
@@ -22,7 +23,9 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
   const lastVideoTimeRef = useRef(-1);
   const lastUiUpdateRef = useRef(0);
   const onPoseRef = useRef(onPose);
+  const onFrameRef = useRef(onFrame);
   onPoseRef.current = onPose;
+  onFrameRef.current = onFrame;
 
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
@@ -79,6 +82,7 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
           result?.landmarks?.[0],
           performance.now()
         );
+        onFrameRef.current?.(overlayRef.current);
 
         const now = performance.now();
         if (now - lastUiUpdateRef.current >= UI_UPDATE_MS) {
@@ -152,6 +156,16 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
     setPose(emptyPose);
     setStatus("idle");
   }, [canvasRef, releaseStream, stopLoop]);
+
+  const didAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || didAutoStartRef.current) {
+      return undefined;
+    }
+    didAutoStartRef.current = true;
+    startCamera();
+    return undefined;
+  }, [autoStart, startCamera]);
 
   useEffect(() => () => {
     stopCamera();

@@ -28,6 +28,7 @@ const createAngleFilters = () => ({
 const emptyPose = {
   detected: false,
   head: { tiltDeg: null, turnDeg: null, pitchDeg: null },
+  body: { tiltDeg: null },
   leftArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
   rightArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
 };
@@ -50,6 +51,7 @@ export class PoseSmoother {
     this.points = Array.from({ length: this.landmarkCount }, createLandmarkState);
     this.angles = {
       head: createAngleFilters(),
+      body: createAngleFilters(),
       leftArm: createAngleFilters(),
       rightArm: createAngleFilters(),
     };
@@ -109,6 +111,9 @@ export class PoseSmoother {
         tiltDeg: filterAngle(this.angles.head.tiltDeg, pose.head.tiltDeg, timeMs),
         turnDeg: filterAngle(this.angles.head.turnDeg, pose.head.turnDeg, timeMs),
         pitchDeg: filterAngle(this.angles.head.pitchDeg, pose.head.pitchDeg, timeMs),
+      },
+      body: {
+        tiltDeg: filterAngle(this.angles.body.tiltDeg, pose.body.tiltDeg, timeMs),
       },
       leftArm: {
         upperArmDeg: filterAngle(this.angles.leftArm.upperArmDeg, pose.leftArm.upperArmDeg, timeMs),

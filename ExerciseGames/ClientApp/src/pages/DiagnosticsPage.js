@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from "react";
 import styled from "styled-components";
+import { AppNav } from "../components/AppNav";
 import { useGameHub } from "../hooks/useGameHub";
 import { usePoseCamera } from "../hooks/usePoseCamera";
 
@@ -116,6 +117,7 @@ export const DiagnosticsPage = () => {
       lastSentRef.current = now;
       sendPose({
         head: nextPose.head,
+        body: nextPose.body,
         leftArm: nextPose.leftArm,
         rightArm: nextPose.rightArm,
       });
@@ -135,6 +137,7 @@ export const DiagnosticsPage = () => {
 
   return (
     <div className="container">
+      <AppNav current="diagnostics" />
       <div className="card mb-4">
         <div className="card-body">
           <h1 className="mb-2">Pose diagnostics</h1>
@@ -201,6 +204,11 @@ export const DiagnosticsPage = () => {
           ]}
         />
         <AngleReadout
+          title="Body"
+          color="var(--color-text-primary)"
+          rows={[{ label: "Tilt", value: pose.body?.tiltDeg }]}
+        />
+        <AngleReadout
           title="Left arm"
           color="#38bdf8"
           rows={[
@@ -225,6 +233,7 @@ export const DiagnosticsPage = () => {
           <h3 className="mt-0" style={{ fontSize: "1rem" }}>How to read the numbers</h3>
           <Legend>
             <li>Head tilt: 0° is level. Positive tilts toward your right shoulder.</li>
+            <li>Body tilt: 0° is shoulders level. Positive tilts toward your right.</li>
             <li>Head turn: 0° faces the camera. Positive turns toward your right.</li>
             <li>Head pitch: 0° looks straight. Positive looks up.</li>
             <li>Upper arm / forearm: 0° hangs down, 90° is out to the side, 180° is up.</li>

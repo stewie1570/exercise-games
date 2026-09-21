@@ -1,4 +1,4 @@
-import { computeArmAngles, computeHeadAngles, computePoseAngles } from "./angles";
+import { computeArmAngles, computeBodyTiltDeg, computeHeadAngles, computePoseAngles } from "./angles";
 import { Landmark } from "./landmarks";
 
 const point = (x, y, extras = {}) => ({ x, y, z: 0, visibility: 1, ...extras });
@@ -94,6 +94,15 @@ test("a right-angle elbow reports 90°", () => {
 test("computePoseAngles returns empty values when nobody is detected", () => {
   expect(computePoseAngles(undefined).detected).toBe(false);
   expect(computePoseAngles([]).detected).toBe(false);
+});
+
+test("body tilt toward the person's right is positive", () => {
+  const landmarks = withPoints({
+    leftShoulder: point(0.62, 0.38),
+    rightShoulder: point(0.38, 0.5),
+  });
+
+  expect(computeBodyTiltDeg(landmarks)).toBeGreaterThan(0);
 });
 
 test("low-visibility landmarks are ignored", () => {

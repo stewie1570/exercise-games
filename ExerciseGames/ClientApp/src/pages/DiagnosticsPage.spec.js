@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 
@@ -13,6 +14,7 @@ vi.mock("../hooks/usePoseCamera", () => ({
     pose: {
       detected: false,
       head: { tiltDeg: null, turnDeg: null, pitchDeg: null },
+      body: { tiltDeg: null },
       leftArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
       rightArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
     },
@@ -22,7 +24,11 @@ vi.mock("../hooks/usePoseCamera", () => ({
 }));
 
 test("diagnostics page shows start camera and angle panels", () => {
-  render(<DiagnosticsPage />);
+  render(
+    <MemoryRouter>
+      <DiagnosticsPage />
+    </MemoryRouter>
+  );
 
   expect(screen.getByRole("heading", { name: "Pose diagnostics" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start camera" })).toBeInTheDocument();

@@ -130,11 +130,25 @@ export const computeArmAngles = (landmarks, side) => {
   return { upperArmDeg, elbowDeg, forearmDeg };
 };
 
+export const computeBodyTiltDeg = (landmarks) => {
+  const left = getLandmark(landmarks, Landmark.leftShoulder);
+  const right = getLandmark(landmarks, Landmark.rightShoulder);
+
+  if (!requiredVisible(left, right)) {
+    return null;
+  }
+
+  return roundAngle(
+    -((Math.atan2(left.y - right.y, left.x - right.x) * 180) / Math.PI)
+  );
+};
+
 export const computePoseAngles = (landmarks) => {
   if (!Array.isArray(landmarks) || landmarks.length === 0) {
     return {
       detected: false,
       head: { tiltDeg: null, turnDeg: null, pitchDeg: null },
+      body: { tiltDeg: null },
       leftArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
       rightArm: { upperArmDeg: null, elbowDeg: null, forearmDeg: null },
     };
@@ -143,6 +157,7 @@ export const computePoseAngles = (landmarks) => {
   return {
     detected: true,
     head: computeHeadAngles(landmarks),
+    body: { tiltDeg: computeBodyTiltDeg(landmarks) },
     leftArm: computeArmAngles(landmarks, "left"),
     rightArm: computeArmAngles(landmarks, "right"),
   };
