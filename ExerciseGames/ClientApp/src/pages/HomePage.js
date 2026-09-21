@@ -46,7 +46,7 @@ export const HomePage = () => (
         <h2>Gyrocopter flight</h2>
         <p>
           Flap your arms for throttle and tilt your body or neck to turn. Chase-cam over Meadow
-          Airport.
+          Airport, rivers, roads, and the surrounding mountains.
         </p>
       </CardLink>
       <CardLink className="card" to="/diagnostics">

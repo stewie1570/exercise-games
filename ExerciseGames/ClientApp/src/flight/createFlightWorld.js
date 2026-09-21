@@ -6,7 +6,11 @@ const GROUND_Y = 0;
 const colors = {
   grass: 0x4d7c3f,
   grassDark: 0x3d6a32,
+  field: 0x8fbc5a,
+  wheat: 0xc4a35a,
   runway: 0x3f4450,
+  road: 0x3f3f46,
+  roadEdge: 0x27272a,
   marking: 0xf4f4f5,
   hangar: 0xb45309,
   hangarRoof: 0x7c2d12,
@@ -14,6 +18,13 @@ const colors = {
   towerTop: 0x0ea5e9,
   tree: 0x166534,
   trunk: 0x7c4a1e,
+  water: 0x2b6cb0,
+  waterDeep: 0x1e4e8c,
+  bank: 0x92400e,
+  rock: 0x6b7280,
+  rockWarm: 0x78716c,
+  pine: 0x14532d,
+  snow: 0xf8fafc,
   gyroBody: 0xf59e0b,
   gyroAccent: 0x1f2937,
   rotor: 0x111827,
@@ -22,9 +33,9 @@ const colors = {
 export const createFlightWorld = (container) => {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b7e0);
-  scene.fog = new THREE.Fog(0x87b7e0, 180, 900);
+  scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2800);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.domElement.style.display = "block";
@@ -38,6 +49,10 @@ export const createFlightWorld = (container) => {
   scene.add(sun);
 
   scene.add(createGround());
+  scene.add(createFields());
+  scene.add(createMountains());
+  scene.add(createRivers());
+  scene.add(createRoads());
   scene.add(createAirport());
   scene.add(createTrees());
 
@@ -94,7 +109,7 @@ export const createFlightWorld = (container) => {
 const createGround = () => {
   const group = new THREE.Group();
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(2000, 2000),
+    new THREE.PlaneGeometry(3200, 3200),
     new THREE.MeshLambertMaterial({ color: colors.grass })
   );
   ground.rotation.x = -Math.PI / 2;
@@ -108,6 +123,199 @@ const createGround = () => {
   patch.rotation.x = -Math.PI / 2;
   patch.position.set(0, 0.02, 0);
   group.add(patch);
+  return group;
+};
+
+const addPolyline = (group, points, { width, y, color, depth = 0.1 }) => {
+  const material = new THREE.MeshLambertMaterial({ color });
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [ax, az] = points[i];
+    const [bx, bz] = points[i + 1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.2) {
+      continue;
+    }
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, depth, length + 0.6), material);
+    mesh.position.set((ax + bx) / 2, y, (az + bz) / 2);
+    mesh.rotation.y = Math.atan2(dx, dz);
+    group.add(mesh);
+  }
+};
+
+const addDashes = (group, points, { width, length, gap, y, color }) => {
+  const material = new THREE.MeshLambertMaterial({ color });
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [ax, az] = points[i];
+    const [bx, bz] = points[i + 1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const span = Math.hypot(dx, dz);
+    if (span < 1) {
+      continue;
+    }
+    const ux = dx / span;
+    const uz = dz / span;
+    const step = length + gap;
+    for (let along = length * 0.5; along < span - length * 0.5; along += step) {
+      const dash = new THREE.Mesh(new THREE.BoxGeometry(width, 0.12, length), material);
+      dash.position.set(ax + ux * along, y, az + uz * along);
+      dash.rotation.y = Math.atan2(dx, dz);
+      group.add(dash);
+    }
+  }
+};
+
+const createFields = () => {
+  const group = new THREE.Group();
+  const plots = [
+    [180, 260, 70, 48, colors.field],
+    [280, 250, 62, 40, colors.wheat],
+    [210, 360, 80, 44, colors.wheat],
+    [-360, 250, 90, 50, colors.field],
+    [-470, 280, 70, 38, colors.wheat],
+    [160, -320, 56, 42, colors.field],
+    [-300, -280, 64, 36, colors.wheat],
+  ];
+  plots.forEach(([x, z, w, d, color]) => {
+    const field = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      new THREE.MeshLambertMaterial({ color })
+    );
+    field.rotation.x = -Math.PI / 2;
+    field.position.set(x, 0.03, z);
+    group.add(field);
+  });
+  return group;
+};
+
+const addMountain = (group, x, z, height, radius, rockColor) => {
+  const rock = new THREE.Mesh(
+    new THREE.ConeGeometry(radius, height, 8),
+    new THREE.MeshLambertMaterial({ color: rockColor })
+  );
+  rock.position.set(x, height / 2, z);
+  group.add(rock);
+  if (height > 72) {
+    const snowHeight = height * 0.34;
+    const snow = new THREE.Mesh(
+      new THREE.ConeGeometry(radius * 0.42, snowHeight, 8),
+      new THREE.MeshLambertMaterial({ color: colors.snow })
+    );
+    snow.position.set(x, height - snowHeight * 0.45, z);
+    group.add(snow);
+  }
+};
+
+const createMountains = () => {
+  const group = new THREE.Group();
+  group.name = "mountains";
+  const peaks = [
+    [-420, -80, 95, 70, colors.rock],
+    [-510, 40, 128, 88, colors.rockWarm],
+    [-480, -220, 82, 62, colors.rock],
+    [-620, -100, 168, 104, colors.rockWarm],
+    [-390, 180, 74, 56, colors.rock],
+    [-700, 200, 146, 92, colors.rock],
+    [-560, 320, 90, 66, colors.rockWarm],
+    [-640, -360, 118, 80, colors.rock],
+    [-780, 40, 154, 96, colors.rockWarm],
+    [480, -120, 112, 78, colors.rock],
+    [580, 60, 158, 98, colors.rockWarm],
+    [430, 240, 78, 58, colors.rock],
+    [650, -280, 132, 84, colors.rock],
+    [720, 180, 104, 72, colors.rockWarm],
+    [540, 400, 92, 66, colors.rock],
+    [800, -40, 140, 90, colors.rockWarm],
+    [360, 520, 70, 52, colors.rock],
+    [-180, -620, 134, 90, colors.rock],
+    [90, -710, 176, 112, colors.rockWarm],
+    [230, -580, 98, 74, colors.rock],
+    [-40, -800, 150, 98, colors.rock],
+    [360, -730, 86, 62, colors.rockWarm],
+    [-280, -740, 120, 82, colors.rock],
+    [160, 560, 68, 50, colors.rock],
+    [-90, 660, 88, 64, colors.rockWarm],
+    [310, 720, 76, 56, colors.rock],
+    [-220, 780, 102, 70, colors.rock],
+    [20, 860, 94, 68, colors.rockWarm],
+  ];
+  peaks.forEach(([x, z, height, radius, color]) => {
+    addMountain(group, x, z, height, radius, color);
+  });
+
+  const foothills = [
+    [-300, -40, 28, 36], [-340, 90, 24, 30], [-280, 260, 22, 28],
+    [320, -40, 26, 32], [340, 140, 22, 28], [300, 320, 20, 26],
+    [-120, -480, 30, 34], [160, -500, 26, 30], [40, 460, 18, 24],
+  ];
+  foothills.forEach(([x, z, height, radius]) => {
+    addMountain(group, x, z, height, radius, colors.rock);
+  });
+  return group;
+};
+
+const RIVER = [
+  [-520, -820], [-360, -560], [-280, -360], [-230, -180],
+  [-200, 20], [-240, 180], [-210, 320], [-150, 470],
+  [20, 610], [180, 720], [340, 840],
+];
+
+const TRIBUTARY = [
+  [420, -640], [340, -400], [280, -220], [240, -40],
+  [210, 120], [90, 250], [-80, 300], [-210, 320],
+];
+
+const createRivers = () => {
+  const group = new THREE.Group();
+  group.name = "rivers";
+  addPolyline(group, RIVER, { width: 18, y: 0.04, color: colors.bank, depth: 0.08 });
+  addPolyline(group, RIVER, { width: 11, y: 0.08, color: colors.water, depth: 0.1 });
+  addPolyline(group, TRIBUTARY, { width: 12, y: 0.04, color: colors.bank, depth: 0.08 });
+  addPolyline(group, TRIBUTARY, { width: 7, y: 0.08, color: colors.waterDeep, depth: 0.1 });
+
+  const lake = new THREE.Mesh(
+    new THREE.CircleGeometry(38, 24),
+    new THREE.MeshLambertMaterial({ color: colors.water })
+  );
+  lake.rotation.x = -Math.PI / 2;
+  lake.position.set(-210, 0.09, 320);
+  group.add(lake);
+  return group;
+};
+
+const HIGHWAY = [
+  [-780, 310], [-480, 310], [-210, 310], [80, 310], [360, 310], [820, 310],
+];
+const ACCESS = [
+  [40, 92], [92, 92], [92, 210], [92, 310],
+];
+const NORTH_ROAD = [
+  [78, 118], [86, -40], [120, -220], [210, -380], [310, -520],
+];
+const RIVER_ROAD = [
+  [-120, 40], [-90, 180], [-70, 320], [-20, 470], [80, 580], [220, 690],
+];
+
+const createRoads = () => {
+  const group = new THREE.Group();
+  group.name = "roads";
+  const routes = [HIGHWAY, ACCESS, NORTH_ROAD, RIVER_ROAD];
+  routes.forEach((points, index) => {
+    const width = index === 0 ? 13 : 8;
+    addPolyline(group, points, { width: width + 1.6, y: 0.05, color: colors.roadEdge, depth: 0.08 });
+    addPolyline(group, points, { width, y: 0.09, color: colors.road, depth: 0.1 });
+  });
+  addDashes(group, HIGHWAY, { width: 0.45, length: 8, gap: 10, y: 0.16, color: colors.marking });
+  addDashes(group, ACCESS, { width: 0.28, length: 5, gap: 7, y: 0.16, color: colors.marking });
+
+  const bridge = new THREE.Mesh(
+    new THREE.BoxGeometry(16, 1.4, 36),
+    new THREE.MeshLambertMaterial({ color: 0x57534e })
+  );
+  bridge.position.set(-210, 1.1, 310);
+  group.add(bridge);
   return group;
 };
 
@@ -218,10 +426,15 @@ const createTrees = () => {
   const spots = [
     [90, 40], [120, -30], [80, -160], [-90, -40], [-130, 20],
     [-70, -180], [140, 90], [-150, -90], [60, 200], [-40, -260],
-    [200, -40], [-210, 60],
+    [200, -40], [-210, 60], [250, 140], [190, 200], [-260, 80],
+    [-180, 240], [40, 400], [-40, 480], [140, -240], [-140, -320],
+    [260, -200], [-320, -140], [320, 80], [380, 200], [-380, 140],
+    [100, 500], [-160, 560], [220, 440], [-240, -420], [40, -420],
+    [280, -360], [-80, 360], [160, 320], [-300, 360], [400, -80],
+    [20, 240], [-60, 160], [70, -300],
   ];
   spots.forEach(([x, z], index) => {
-    const height = 8 + (index % 4) * 1.4;
+    const height = 8 + (index % 5) * 1.5;
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.5, 0.7, 3, 6),
       new THREE.MeshLambertMaterial({ color: colors.trunk })
@@ -229,7 +442,7 @@ const createTrees = () => {
     trunk.position.set(x, 1.5, z);
     const leaves = new THREE.Mesh(
       new THREE.ConeGeometry(3.4, height, 7),
-      new THREE.MeshLambertMaterial({ color: colors.tree })
+      new THREE.MeshLambertMaterial({ color: index % 3 === 0 ? colors.pine : colors.tree })
     );
     leaves.position.set(x, 3 + height / 2, z);
     group.add(trunk, leaves);
