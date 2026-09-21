@@ -1,7 +1,7 @@
 import { cameraErrorMessage, openCameraStream, stopMediaStream, waitForVideo } from "../pose/camera";
-import { computePoseAngles } from "../pose/angles";
 import { drawMirroredVideo, drawStickFigure } from "../pose/drawStickFigure";
 import { createPoseLandmarker } from "../pose/landmarker";
+import { PoseSmoother } from "../pose/poseSmoother";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const emptyPose = {
@@ -15,6 +15,8 @@ const UI_UPDATE_MS = 100;
 
 export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
   const landmarkerRef = useRef(null);
+  const smootherRef = useRef(new PoseSmoother());
+  const overlayRef = useRef(null);
   const streamRef = useRef(null);
   const frameRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
@@ -73,27 +75,30 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
       lastVideoTimeRef.current = video.currentTime;
       try {
         const result = landmarker.detectForVideo(video, performance.now());
-        const landmarks = result?.landmarks?.[0];
-        const nextPose = computePoseAngles(landmarks);
-
-        if (landmarks) {
-          drawStickFigure(ctx, landmarks, {
-            width,
-            height,
-            mirror: true,
-            angles: nextPose,
-          });
-        }
+        overlayRef.current = smootherRef.current.apply(
+          result?.landmarks?.[0],
+          performance.now()
+        );
 
         const now = performance.now();
         if (now - lastUiUpdateRef.current >= UI_UPDATE_MS) {
           lastUiUpdateRef.current = now;
-          setPose(nextPose);
-          onPoseRef.current?.(nextPose);
+          setPose(overlayRef.current.pose);
+          onPoseRef.current?.(overlayRef.current.pose);
         }
       } catch (err) {
         setError(err?.message || "Pose detection failed.");
       }
+    }
+
+    const overlay = overlayRef.current;
+    if (overlay?.landmarks) {
+      drawStickFigure(ctx, overlay.landmarks, {
+        width,
+        height,
+        mirror: true,
+        angles: overlay.pose,
+      });
     }
 
     frameRef.current = requestAnimationFrame(renderLoop);
@@ -124,6 +129,8 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
       }
 
       setStatus("running");
+      smootherRef.current.reset();
+      overlayRef.current = null;
       stopLoop();
       frameRef.current = requestAnimationFrame(renderLoop);
     } catch (err) {
@@ -140,6 +147,8 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose }) => {
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     lastVideoTimeRef.current = -1;
+    overlayRef.current = null;
+    smootherRef.current.reset();
     setPose(emptyPose);
     setStatus("idle");
   }, [canvasRef, releaseStream, stopLoop]);

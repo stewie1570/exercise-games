@@ -86,7 +86,7 @@ const Legend = styled.ul`
   font-size: 0.92rem;
 `;
 
-const formatDeg = (value) => (value == null ? "—" : `${value.toFixed(1)}°`);
+const formatDeg = (value) => (value == null ? "—" : `${Math.round(value)}°`);
 
 const AngleReadout = ({ title, color, rows }) => (
   <AngleCard>
