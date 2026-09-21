@@ -1,0 +1,10 @@
+{
+  "name": "exercise-games",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Camera-controlled exercise games with a .NET / SignalR / Vite / React stack",
+  "scripts": {
+    "start": "dotnet run --project ExerciseGames/ExerciseGames.csproj",
+    "test": "npm test --prefix ExerciseGames/ClientApp"
+  }
+}
