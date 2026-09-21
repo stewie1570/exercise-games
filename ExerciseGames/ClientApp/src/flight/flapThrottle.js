@@ -1,7 +1,9 @@
+import { bodyDownVector, computeArmAngles } from "../pose/angles";
 import { Landmark, getLandmark, isVisible } from "../pose/landmarks";
 
 const MIN_AMPLITUDE = 0.016;
 export const FULL_FLAPS_PER_SEC = 2;
+export const ARMS_OUT_DEG = 40;
 const MIN_INTERVAL_MS = 120;
 const MAX_INTERVAL_MS = 1500;
 const DUAL_ARM_DEBOUNCE_MS = 90;
@@ -24,13 +26,19 @@ export class FlapDetector {
     this.throttle = 0;
     this.flapsPerSec = 0;
     this.sensed = false;
+    this.armsOut = false;
   }
 
-  update(landmarks, timeMs) {
+  update(landmarks, timeMs, pose) {
+    this.armsOut = armsAreOut(landmarks, pose);
     const leftAmp = this.left.sample(wristHeight(landmarks, Landmark.leftWrist));
     const rightAmp = this.right.sample(wristHeight(landmarks, Landmark.rightWrist));
     const amplitude = Math.max(leftAmp, rightAmp);
-    if (amplitude >= MIN_AMPLITUDE && timeMs - this.lastBeatAt >= DUAL_ARM_DEBOUNCE_MS) {
+    if (
+      this.armsOut &&
+      amplitude >= MIN_AMPLITUDE &&
+      timeMs - this.lastBeatAt >= DUAL_ARM_DEBOUNCE_MS
+    ) {
       this.registerBeat(timeMs);
     }
 
@@ -52,7 +60,7 @@ export class FlapDetector {
   refresh(timeMs) {
     const dt = this.lastTickAt ? Math.max(0, (timeMs - this.lastTickAt) / 1000) : 0;
     this.beats = this.beats.filter((beat) => timeMs - beat <= MAX_INTERVAL_MS);
-    this.flapsPerSec = measuredFlapsPerSec(this.beats, timeMs);
+    this.flapsPerSec = this.armsOut ? measuredFlapsPerSec(this.beats, timeMs) : 0;
     const target = clamp(this.flapsPerSec / FULL_FLAPS_PER_SEC, 0, 1);
     this.throttle = expFollow(this.throttle, target, dt, THROTTLE_TAU);
     if (target === 0 && this.throttle < 0.01) {
@@ -61,14 +69,27 @@ export class FlapDetector {
   }
 }
 
+export const armsAreOut = (landmarks, pose) => {
+  const left = pose?.leftArm?.upperArmDeg ?? computeArmAngles(landmarks, "left").upperArmDeg;
+  const right = pose?.rightArm?.upperArmDeg ?? computeArmAngles(landmarks, "right").upperArmDeg;
+  return left != null && right != null && left > ARMS_OUT_DEG && right > ARMS_OUT_DEG;
+};
+
 export const wristHeight = (landmarks, landmark) => {
   const point = getLandmark(landmarks, landmark);
   if (!isVisible(point)) {
     return null;
   }
 
-  // Image y grows downward, so invert so flapping up increases this value.
-  return 1 - point.y;
+  const shoulderIndex =
+    landmark === Landmark.leftWrist ? Landmark.leftShoulder : Landmark.rightShoulder;
+  const shoulder = getLandmark(landmarks, shoulderIndex);
+  const down = bodyDownVector(landmarks);
+  const origin = isVisible(shoulder) ? shoulder : { x: 0, y: 0 };
+  const rx = point.x - origin.x;
+  const ry = point.y - origin.y;
+  // Height along the torso, opposite body-down, so flapping up increases this value.
+  return -(rx * down.x + ry * (down.y ?? 0));
 };
 
 class WristMotion {

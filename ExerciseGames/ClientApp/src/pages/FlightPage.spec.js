@@ -33,10 +33,12 @@ test("flight page explains arm flaps and tilt steering", () => {
     </MemoryRouter>
   );
 
-  expect(screen.getByRole("heading", { name: "Gyrocopter flight" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Ultralight flight" })).toBeInTheDocument();
   expect(usePoseCamera).toHaveBeenCalledWith(expect.objectContaining({ autoStart: true }));
   expect(screen.getByRole("button", { name: "Starting..." })).toBeInTheDocument();
   expect(screen.getByText(/camera starts automatically/i)).toBeInTheDocument();
+  expect(screen.getByText(/both arms out past 40/i)).toBeInTheDocument();
   expect(screen.getByText("Parked")).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Full screen" }).length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
 });

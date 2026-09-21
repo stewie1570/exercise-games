@@ -35,4 +35,9 @@ test("diagnostics page shows start camera and angle panels", () => {
   expect(screen.getByText("SignalR connected")).toBeInTheDocument();
   expect(screen.getByText("Left arm")).toBeInTheDocument();
   expect(screen.getByText("Right arm")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Flap / throttle" })).toBeInTheDocument();
+  expect(screen.getByText("Arms out")).toBeInTheDocument();
+  expect(screen.getByText("Throttle")).toBeInTheDocument();
+  expect(screen.getByText("Flaps")).toBeInTheDocument();
+  expect(screen.getByText("Climb")).toBeInTheDocument();
 });

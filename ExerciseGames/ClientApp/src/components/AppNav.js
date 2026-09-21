@@ -14,6 +14,6 @@ export const AppNav = ({ current }) => (
   <Bar>
     <Link to="/">Home</Link>
     {current !== "diagnostics" && <Link to="/diagnostics">Diagnostics</Link>}
-    {current !== "fly" && <Link to="/fly">Gyrocopter</Link>}
+    {current !== "fly" && <Link to="/fly">Ultralight</Link>}
   </Bar>
 );

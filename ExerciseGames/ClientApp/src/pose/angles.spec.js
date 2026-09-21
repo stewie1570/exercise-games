@@ -13,6 +13,25 @@ const withPoints = (overrides) => {
   return landmarks;
 };
 
+const rotateAround = (pt, origin, tiltDeg) => {
+  const rad = (tiltDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const x = pt.x - origin.x;
+  const y = pt.y - origin.y;
+  return point(origin.x + x * cos - y * sin, origin.y + x * sin + y * cos, {
+    visibility: pt.visibility,
+  });
+};
+
+const tiltBody = (overrides, origin, tiltDeg) => {
+  const rotated = {};
+  Object.entries(overrides).forEach(([name, value]) => {
+    rotated[name] = rotateAround(value, origin, -tiltDeg);
+  });
+  return withPoints(rotated);
+};
+
 test("level facing head has zero tilt, turn, and pitch", () => {
   const landmarks = withPoints({
     nose: point(0.5, 0.3),
@@ -68,6 +87,44 @@ test("a hanging straight left arm reports 0° upper arm and 180° elbow", () => 
     elbowDeg: 180,
     forearmDeg: 0,
   });
+});
+
+test("arm angles follow the torso so body tilt does not look like the arms moved", () => {
+  const origin = { x: 0.5, y: 0.4 };
+  const tiltDeg = 40;
+  const hanging = tiltBody(
+    {
+      leftShoulder: point(0.62, 0.4),
+      rightShoulder: point(0.38, 0.4),
+      leftElbow: point(0.62, 0.58),
+      leftWrist: point(0.62, 0.76),
+      rightElbow: point(0.38, 0.58),
+      rightWrist: point(0.38, 0.76),
+    },
+    origin,
+    tiltDeg
+  );
+
+  expect(computeBodyTiltDeg(hanging)).toBeCloseTo(tiltDeg, 0);
+  expect(computeArmAngles(hanging, "left").upperArmDeg).toBeCloseTo(0, 0);
+  expect(computeArmAngles(hanging, "right").upperArmDeg).toBeCloseTo(0, 0);
+  expect(computeArmAngles(hanging, "left").forearmDeg).toBeCloseTo(0, 0);
+
+  const armsOut = tiltBody(
+    {
+      leftShoulder: point(0.62, 0.4),
+      rightShoulder: point(0.38, 0.4),
+      leftElbow: point(0.8, 0.4),
+      leftWrist: point(0.98, 0.4),
+      rightElbow: point(0.2, 0.4),
+      rightWrist: point(0.02, 0.4),
+    },
+    origin,
+    tiltDeg
+  );
+
+  expect(computeArmAngles(armsOut, "left").upperArmDeg).toBeCloseTo(90, 0);
+  expect(computeArmAngles(armsOut, "right").upperArmDeg).toBeCloseTo(90, 0);
 });
 
 test("a left arm raised to the side reports about 90° from down", () => {
