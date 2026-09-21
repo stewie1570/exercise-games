@@ -5,6 +5,7 @@ import { createFlightWorld } from "../flight/createFlightWorld";
 import { FlapDetector } from "../flight/flapThrottle";
 import { createAircraftState, FLIGHT, stepAircraft } from "../flight/physics";
 import { steeringFromTilt } from "../flight/tiltSteering";
+import { useFullscreen } from "../hooks/useFullscreen";
 import { usePoseCamera } from "../hooks/usePoseCamera";
 
 const Stage = styled.div`
@@ -13,6 +14,18 @@ const Stage = styled.div`
   min-height: 420px;
   overflow: hidden;
   background: #87b7e0;
+
+  &:fullscreen,
+  &:-webkit-full-screen {
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    margin: 0;
+  }
 `;
 
 const WorldHost = styled.div`
@@ -24,7 +37,7 @@ const Hud = styled.div`
   position: absolute;
   top: 0.75rem;
   left: 0.75rem;
-  right: 0.75rem;
+  right: 8.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
@@ -85,14 +98,42 @@ const MaintainMark = styled.div`
   background: #fbbf24;
 `;
 
+const FullscreenButton = styled.button`
+  pointer-events: auto;
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  border: 1px solid rgba(248, 250, 252, 0.35);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #f8fafc;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgba(15, 23, 42, 0.75);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
 export const FlightPage = () => {
   const worldHostRef = useRef(null);
+  const stageRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const worldRef = useRef(null);
   const aircraftRef = useRef(createAircraftState());
   const flapRef = useRef(new FlapDetector());
   const controlsRef = useRef({ throttle: 0, turn: 0, flapsPerSec: 0 });
+  const { isFullscreen, toggle: toggleFullscreen, supported: fullscreenSupported } =
+    useFullscreen(stageRef);
   const [hud, setHud] = useState({
     throttle: 0,
     altitude: aircraftRef.current.altitude,
@@ -107,7 +148,11 @@ export const FlightPage = () => {
     canvasRef,
     autoStart: true,
     onFrame: (overlay) => {
-      const throttle = flapRef.current.update(overlay?.landmarks, performance.now());
+      const throttle = flapRef.current.update(
+        overlay?.landmarks,
+        performance.now(),
+        overlay?.pose
+      );
       const turn = steeringFromTilt({
         headTiltDeg: overlay?.pose?.head?.tiltDeg,
         bodyTiltDeg: overlay?.pose?.body?.tiltDeg,
@@ -132,6 +177,8 @@ export const FlightPage = () => {
     world.update(aircraftRef.current, 0.016);
     const onResize = () => world.setSize();
     window.addEventListener("resize", onResize);
+    document.addEventListener("fullscreenchange", onResize);
+    document.addEventListener("webkitfullscreenchange", onResize);
 
     let last = performance.now();
     let lastHud = 0;
@@ -164,10 +211,16 @@ export const FlightPage = () => {
     return () => {
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("fullscreenchange", onResize);
+      document.removeEventListener("webkitfullscreenchange", onResize);
       world.dispose();
       worldRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    worldRef.current?.setSize();
+  }, [isFullscreen]);
 
   const running = status === "running";
   const headingDeg = ((hud.heading * 180) / Math.PI + 360) % 360;
@@ -177,11 +230,12 @@ export const FlightPage = () => {
       <AppNav current="fly" />
       <div className="card mb-3">
         <div className="card-body">
-          <h1 className="mb-2">Gyrocopter flight</h1>
+          <h1 className="mb-2">Ultralight flight</h1>
           <p className="mb-2" style={{ color: "var(--color-text-secondary)" }}>
-            The camera starts automatically. Flap your arms to take off: two flaps per second is
-            full throttle, and staying still is none. Faster flapping climbs. A steady medium flap
-            holds altitude. Stop flapping and you glide down. Tilt your body or neck to turn.
+            The camera starts automatically. Hold both arms out past 40°, then flap to take off:
+            two flaps per second is full throttle, and staying still is none. Faster flapping
+            climbs. A steady medium flap holds altitude. Stop flapping and you glide down. Tilt
+            your body or neck to turn.
           </p>
           {running ? (
             <button className="btn btn-secondary" type="button" onClick={stopCamera}>
@@ -197,6 +251,15 @@ export const FlightPage = () => {
               {status === "loading" ? "Starting..." : "Start camera"}
             </button>
           )}
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={toggleFullscreen}
+            disabled={!fullscreenSupported}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            {isFullscreen ? "Exit full screen" : "Full screen"}
+          </button>
         </div>
       </div>
 
@@ -206,7 +269,7 @@ export const FlightPage = () => {
         </div>
       )}
 
-      <Stage className="card mb-3">
+      <Stage ref={stageRef} className="card mb-3">
         <WorldHost ref={worldHostRef} />
         <Hud>
           <div>
@@ -231,6 +294,13 @@ export const FlightPage = () => {
           </div>
           <div>Flaps {hud.flapsPerSec.toFixed(1)} /s</div>
         </Hud>
+        <FullscreenButton
+          type="button"
+          onClick={toggleFullscreen}
+          disabled={!fullscreenSupported}
+        >
+          {isFullscreen ? "Exit full screen" : "Full screen"}
+        </FullscreenButton>
         <Pip>
           <HiddenVideo ref={videoRef} playsInline muted />
           <OverlayCanvas ref={canvasRef} />

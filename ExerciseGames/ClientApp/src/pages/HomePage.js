@@ -43,16 +43,17 @@ export const HomePage = () => (
 
     <Grid>
       <CardLink className="card" to="/fly">
-        <h2>Gyrocopter flight</h2>
+        <h2>Ultralight flight</h2>
         <p>
-          Flap your arms for throttle and tilt your body or neck to turn. Chase-cam over Meadow
-          Airport, rivers, roads, and the surrounding mountains.
+          Hold both arms out and flap for throttle, then tilt your body or neck to turn. Chase-cam
+          over Meadow Airport, rivers, roads, and the surrounding mountains.
         </p>
       </CardLink>
       <CardLink className="card" to="/diagnostics">
         <h2>Pose diagnostics</h2>
         <p>
-          Live stick-figure overlay and head/arm angle readouts for tuning the camera controls.
+          Live stick-figure overlay, arm angles, and a flap/throttle panel for debugging takeoff
+          without the 3D world.
         </p>
       </CardLink>
     </Grid>

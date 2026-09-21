@@ -30,6 +30,23 @@ test("a short throttle pulse does not jump a flap-sized step of altitude", () =>
   expect(held.altitude - started.altitude).toBeGreaterThan(8);
 });
 
+test("vertical speed accelerates instead of jumping to the climb target", () => {
+  const started = {
+    ...createAircraftState(),
+    altitude: 40,
+    moving: true,
+    speed: FLIGHT.airspeed,
+  };
+  const first = stepAircraft(started, { throttle: 1, turn: 0 }, 0.05);
+  const second = stepAircraft(first, { throttle: 1, turn: 0 }, 0.05);
+  const target = targetClimbRate(1);
+
+  expect(first.climbRate).toBeGreaterThan(0);
+  expect(first.climbRate).toBeLessThan(target * 0.15);
+  expect(second.climbRate - first.climbRate).toBeGreaterThan(first.climbRate - started.climbRate);
+  expect(second.climbRate).toBeLessThan(target * 0.3);
+});
+
 test("airspeed stays constant while heading follows right tilt", () => {
   const started = { ...createAircraftState(), moving: true };
   const next = stepAircraft(started, { throttle: FLIGHT.maintainThrottle, turn: 1 }, 1);

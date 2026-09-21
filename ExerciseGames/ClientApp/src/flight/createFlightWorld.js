@@ -26,9 +26,11 @@ const colors = {
   rockWarm: 0x78716c,
   pine: 0x14532d,
   snow: 0xf8fafc,
-  gyroBody: 0xf59e0b,
-  gyroAccent: 0x1f2937,
-  rotor: 0x111827,
+  planeBody: 0xf59e0b,
+  planeWing: 0xf8fafc,
+  planeAccent: 0x1f2937,
+  planeStripe: 0x0369a1,
+  prop: 0x111827,
 };
 
 export const createFlightWorld = (container) => {
@@ -62,12 +64,12 @@ export const createFlightWorld = (container) => {
     scene.add(chunk);
   });
 
-  const aircraft = createGyrocopter();
+  const aircraft = createUltralight();
   scene.add(aircraft);
 
   const lookAt = new THREE.Vector3();
-  const chaseLocal = new THREE.Vector3(0, 1.55, 7.2);
-  const focusLocal = new THREE.Vector3(0, 0.4, -0.15);
+  const chaseLocal = new THREE.Vector3(0, 2.15, 9.2);
+  const focusLocal = new THREE.Vector3(0, 0.7, -0.4);
   const cameraUp = new THREE.Vector3();
   const frustum = new THREE.Frustum();
   const projScreen = new THREE.Matrix4();
@@ -90,10 +92,9 @@ export const createFlightWorld = (container) => {
     aircraft.rotation.x = airborne
       ? THREE.MathUtils.clamp(-(state.climbRate || 0) * 0.012, -0.18, 0.22)
       : 0;
-    const rotorSpeed = state.moving ? 8 + (state.speed || 0) * 0.35 + state.throttle * 18 : 2.4;
-    const propSpeed = state.moving ? 6 + (state.speed || 0) * 0.5 + state.throttle * 28 : 0;
-    aircraft.userData.rotor.rotation.y += rotorSpeed * dt;
-    aircraft.userData.prop.rotation.x += propSpeed * dt;
+    const spinning = state.moving || (state.throttle || 0) > 0.02;
+    const propSpeed = spinning ? 10 + (state.speed || 0) * 0.4 + (state.throttle || 0) * 32 : 0;
+    aircraft.userData.prop.rotation.z += propSpeed * dt;
 
     aircraft.updateMatrixWorld();
     camera.position.copy(chaseLocal);
@@ -458,7 +459,7 @@ const createAirportSign = () => {
   ctx.textAlign = "center";
   ctx.fillText("MEADOW AIRPORT", 512, 110);
   ctx.font = "500 36px Inter, sans-serif";
-  ctx.fillText("GYRO 18  •  FIELD ELEV 12", 512, 175);
+  ctx.fillText("UL 18  •  FIELD ELEV 12", 512, 175);
   const texture = new THREE.CanvasTexture(canvas);
   const sign = new THREE.Mesh(
     new THREE.PlaneGeometry(46, 11.5),
@@ -497,64 +498,98 @@ const createTrees = (add) => {
   });
 };
 
-const createGyrocopter = () => {
+const createUltralight = () => {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({ color: colors.gyroBody });
-  const darkMat = new THREE.MeshLambertMaterial({ color: colors.gyroAccent });
-  const rotorMat = new THREE.MeshLambertMaterial({ color: colors.rotor });
+  const bodyMat = new THREE.MeshLambertMaterial({ color: colors.planeBody });
+  const wingMat = new THREE.MeshLambertMaterial({ color: colors.planeWing });
+  const darkMat = new THREE.MeshLambertMaterial({ color: colors.planeAccent });
+  const stripeMat = new THREE.MeshLambertMaterial({ color: colors.planeStripe });
+  const propMat = new THREE.MeshLambertMaterial({ color: colors.prop });
+  const glassMat = new THREE.MeshLambertMaterial({
+    color: 0x7dd3fc,
+    transparent: true,
+    opacity: 0.45,
+  });
 
-  const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 2.4, 6, 12), bodyMat);
+  const fuselage = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 2.2, 6, 12), bodyMat);
   fuselage.rotation.x = Math.PI / 2;
-  fuselage.position.set(0, 0.2, 0.15);
+  fuselage.position.set(0, 0.55, -0.15);
   group.add(fuselage);
 
-  const cabin = new THREE.Mesh(
-    new THREE.SphereGeometry(0.72, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-    new THREE.MeshLambertMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.45 })
-  );
-  cabin.position.set(0, 0.55, -0.55);
-  group.add(cabin);
+  const cowling = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.55, 10), darkMat);
+  cowling.rotation.x = Math.PI / 2;
+  cowling.position.set(0, 0.55, -1.42);
+  group.add(cowling);
 
-  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 3.2, 8), darkMat);
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    glassMat
+  );
+  canopy.position.set(0, 0.78, -0.35);
+  group.add(canopy);
+
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 3.4, 8), darkMat);
   boom.rotation.x = Math.PI / 2;
-  boom.position.set(0, 0.35, 2.2);
+  boom.position.set(0, 0.58, 2.05);
   group.add(boom);
 
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.8), darkMat);
-  tail.position.set(0, 0.85, 3.7);
-  group.add(tail);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.12, 1.7), wingMat);
+  wing.position.set(0, 1.62, -0.15);
+  group.add(wing);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(11.25, 0.04, 0.28), stripeMat);
+  stripe.position.set(0, 1.69, 0.35);
+  group.add(stripe);
 
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.8, 8), darkMat);
-  mast.position.set(0, 1.5, 0);
-  group.add(mast);
+  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, 0.15), new THREE.Vector3(2.9, 1.56, 0.2));
+  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, 0.15), new THREE.Vector3(-2.9, 1.56, 0.2));
+  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, -0.35), new THREE.Vector3(2.6, 1.56, -0.45));
+  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, -0.35), new THREE.Vector3(-2.6, 1.56, -0.45));
 
-  const rotor = new THREE.Group();
-  rotor.position.set(0, 2.4, 0);
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.16, 10), rotorMat);
-  rotor.add(hub);
-  [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].forEach((angle) => {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 5.4), rotorMat);
-    blade.rotation.y = angle;
-    rotor.add(blade);
-  });
-  group.add(rotor);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.15, 0.85), wingMat);
+  fin.position.set(0, 1.15, 3.62);
+  group.add(fin);
+  const finStripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 0.85), stripeMat);
+  finStripe.position.set(0, 1.55, 3.62);
+  group.add(finStripe);
+
+  const stabilizer = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.7), wingMat);
+  stabilizer.position.set(0, 0.58, 3.55);
+  group.add(stabilizer);
 
   const prop = new THREE.Group();
-  prop.position.set(0, 0.35, 1.55);
-  const propHub = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), darkMat);
-  prop.add(propHub);
-  const bladeA = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.4, 0.18), darkMat);
-  const bladeB = bladeA.clone();
-  bladeB.rotation.x = Math.PI / 2;
-  prop.add(bladeA, bladeB);
+  prop.position.set(0, 0.55, -1.78);
+  const spinner = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), darkMat);
+  spinner.scale.set(1, 1, 1.3);
+  prop.add(spinner);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.12, 0.1), propMat);
+  const blade2 = blade.clone();
+  blade2.rotation.z = Math.PI / 2;
+  prop.add(blade, blade2);
   group.add(prop);
 
-  const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.6, 10), darkMat);
-  gear.rotation.z = Math.PI / 2;
-  gear.position.set(0, -0.55, 0.4);
-  group.add(gear);
+  addWheel(group, darkMat, 0, -0.42, -1.15, 0.16);
+  addWheel(group, darkMat, 0.78, -0.48, 0.35, 0.2);
+  addWheel(group, darkMat, -0.78, -0.48, 0.35, 0.2);
+  addStrut(group, darkMat, new THREE.Vector3(0.2, 0.2, -0.9), new THREE.Vector3(0, -0.28, -1.12));
+  addStrut(group, darkMat, new THREE.Vector3(0.28, 0.22, 0.15), new THREE.Vector3(0.78, -0.32, 0.32));
+  addStrut(group, darkMat, new THREE.Vector3(-0.28, 0.22, 0.15), new THREE.Vector3(-0.78, -0.32, 0.32));
 
-  group.userData.rotor = rotor;
   group.userData.prop = prop;
   return group;
+};
+
+const addStrut = (group, material, from, to) => {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const length = dir.length();
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, length, 6), material);
+  mesh.position.copy(from).add(to).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  group.add(mesh);
+};
+
+const addWheel = (group, material, x, y, z, radius) => {
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.12, 10), material);
+  wheel.rotation.z = Math.PI / 2;
+  wheel.position.set(x, y, z);
+  group.add(wheel);
 };

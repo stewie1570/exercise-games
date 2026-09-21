@@ -9,6 +9,7 @@ export const FLIGHT = {
   maxDescendRate: 15,
   maxTurnRate: 0.95,
   climbTau: 1.15,
+  climbCommandTau: 1.15,
   minAltitude: 1.4,
   maxAltitude: 240,
 };
@@ -22,6 +23,7 @@ export const createAircraftState = () => ({
   heading: 0,
   throttle: 0,
   climbRate: 0,
+  climbCommand: 0,
   speed: 0,
   moving: false,
 });
@@ -46,14 +48,16 @@ const expFollow = (current, target, dt, tau) => {
   return target + (current - target) * Math.exp(-dt / tau);
 };
 
-const expFollowIntegral = (current, target, dt, tau) => {
-  if (dt <= 0) {
-    return 0;
-  }
-  if (tau <= 1e-6) {
-    return target * dt;
-  }
-  return target * dt + (current - target) * tau * (1 - Math.exp(-dt / tau));
+const stepClimb = (state, targetClimb, dt) => {
+  const climbCommand = expFollow(
+    state.climbCommand ?? 0,
+    targetClimb,
+    dt,
+    FLIGHT.climbCommandTau
+  );
+  const climbRate = expFollow(state.climbRate, climbCommand, dt, FLIGHT.climbTau);
+  const dh = (state.climbRate + climbRate) * 0.5 * dt;
+  return { climbCommand, climbRate, dh };
 };
 
 export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
@@ -69,6 +73,7 @@ export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
       altitude: grounded ? FLIGHT.minAltitude : state.altitude,
       throttle: nextThrottle,
       climbRate: 0,
+      climbCommand: 0,
       turn: 0,
       speed: 0,
       moving: false,
@@ -80,18 +85,21 @@ export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
     : state.heading;
 
   let climbRate = 0;
+  let climbCommand = state.climbCommand ?? 0;
   let altitude = state.altitude;
 
   if (powered || !grounded) {
-    const targetClimb = targetClimbRate(nextThrottle);
-    const dh = expFollowIntegral(state.climbRate, targetClimb, dt, FLIGHT.climbTau);
-    altitude = clamp(state.altitude + dh, FLIGHT.minAltitude, FLIGHT.maxAltitude);
-    climbRate = expFollow(state.climbRate, targetClimb, dt, FLIGHT.climbTau);
+    const stepped = stepClimb(state, targetClimbRate(nextThrottle), dt);
+    climbCommand = stepped.climbCommand;
+    climbRate = stepped.climbRate;
+    altitude = clamp(state.altitude + stepped.dh, FLIGHT.minAltitude, FLIGHT.maxAltitude);
     if (onGround(altitude) && climbRate < 0) {
       climbRate = 0;
+      climbCommand = 0;
     }
     if (altitude >= FLIGHT.maxAltitude && climbRate > 0) {
       climbRate = 0;
+      climbCommand = 0;
     }
     if (!powered && onGround(altitude)) {
       speed = Math.max(0, speed - FLIGHT.groundDecel * dt);
@@ -101,7 +109,9 @@ export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
   } else {
     speed = Math.max(0, speed - FLIGHT.groundDecel * dt);
     altitude = FLIGHT.minAltitude;
-    climbRate = expFollow(state.climbRate, 0, dt, FLIGHT.climbTau * 0.45);
+    const settled = stepClimb(state, 0, dt);
+    climbCommand = settled.climbCommand;
+    climbRate = settled.climbRate;
   }
 
   if (!powered && onGround(altitude) && speed <= FLIGHT.stopSpeed) {
@@ -115,6 +125,7 @@ export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
     heading,
     throttle: nextThrottle,
     climbRate,
+    climbCommand,
     turn: speed > 0 ? nextTurn : 0,
     speed,
     moving: speed > 0,

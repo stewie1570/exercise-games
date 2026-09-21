@@ -58,6 +58,24 @@ export const roundAngle = (value) => {
 
 const requiredVisible = (...points) => points.every((point) => isVisible(point));
 
+// Image y grows downward. The result points toward the feet, perpendicular to the shoulders.
+export const bodyDownVector = (landmarks) => {
+  const left = getLandmark(landmarks, Landmark.leftShoulder);
+  const right = getLandmark(landmarks, Landmark.rightShoulder);
+  if (!requiredVisible(left, right)) {
+    return DOWN;
+  }
+
+  const dx = left.x - right.x;
+  const dy = left.y - right.y;
+  const mag = Math.hypot(dx, dy);
+  if (mag < 1e-6) {
+    return DOWN;
+  }
+
+  return { x: -dy / mag, y: dx / mag, z: 0 };
+};
+
 export const computeHeadAngles = (landmarks) => {
   const nose = getLandmark(landmarks, Landmark.nose);
   const leftEar = getLandmark(landmarks, Landmark.leftEar);
@@ -96,7 +114,7 @@ export const computeHeadAngles = (landmarks) => {
   return { tiltDeg, turnDeg, pitchDeg };
 };
 
-export const computeArmAngles = (landmarks, side) => {
+export const computeArmAngles = (landmarks, side, bodyDown) => {
   const shoulder = getLandmark(
     landmarks,
     side === "left" ? Landmark.leftShoulder : Landmark.rightShoulder
@@ -112,10 +130,11 @@ export const computeArmAngles = (landmarks, side) => {
 
   const upperArm = vectorBetween(shoulder, elbow);
   const forearm = vectorBetween(elbow, wrist);
+  const down = bodyDown ?? bodyDownVector(landmarks);
 
-  // 0° hangs down, 90° is out to the side, 180° is straight up.
+  // 0° hangs down along the torso, 90° is out to the side, 180° is straight up.
   const upperArmDeg = requiredVisible(shoulder, elbow)
-    ? roundAngle(angleBetweenDeg(DOWN, upperArm))
+    ? roundAngle(angleBetweenDeg(down, upperArm))
     : null;
 
   // 180° is a straight arm, smaller values are a tighter bend.
@@ -124,7 +143,7 @@ export const computeArmAngles = (landmarks, side) => {
     : null;
 
   const forearmDeg = requiredVisible(elbow, wrist)
-    ? roundAngle(angleBetweenDeg(DOWN, forearm))
+    ? roundAngle(angleBetweenDeg(down, forearm))
     : null;
 
   return { upperArmDeg, elbowDeg, forearmDeg };
@@ -154,11 +173,12 @@ export const computePoseAngles = (landmarks) => {
     };
   }
 
+  const bodyDown = bodyDownVector(landmarks);
   return {
     detected: true,
     head: computeHeadAngles(landmarks),
     body: { tiltDeg: computeBodyTiltDeg(landmarks) },
-    leftArm: computeArmAngles(landmarks, "left"),
-    rightArm: computeArmAngles(landmarks, "right"),
+    leftArm: computeArmAngles(landmarks, "left", bodyDown),
+    rightArm: computeArmAngles(landmarks, "right", bodyDown),
   };
 };
