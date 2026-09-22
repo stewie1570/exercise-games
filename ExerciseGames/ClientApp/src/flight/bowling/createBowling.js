@@ -33,8 +33,9 @@ export const createBowling = () => {
   group.add(pinsGroup);
 
   const bodies = pinSlots().map((slot) => createPinBody(originX + slot.x, originZ + slot.z));
+  const pinMesh = createPinMesh();
   const meshes = bodies.map((body) => {
-    const mesh = createPinMesh();
+    const mesh = pinMesh.clone();
     mesh.matrixAutoUpdate = false;
     pinsGroup.add(mesh);
     syncPinMesh(mesh, body);
@@ -42,17 +43,34 @@ export const createBowling = () => {
   });
 
   const game = createBowlingGame(bodies);
+  let hud = snapshot(game);
+  let hudCard = game.card;
+  let hudPhase = game.phase;
+  let hudNext = game.startNext;
 
   const update = (state, dt) => {
     stepBowlingGame(game, { state, dt });
     bodies.forEach((body, index) => {
-      meshes[index].visible = !body.inactive;
-      if (!body.inactive && (!body.sleeping || body.dirty)) {
-        syncPinMesh(meshes[index], body);
+      const mesh = meshes[index];
+      const visible = !body.inactive;
+      if (mesh.visible !== visible) {
+        mesh.visible = visible;
+      }
+      if (visible && (!body.sleeping || body.dirty)) {
+        syncPinMesh(mesh, body);
         body.dirty = false;
       }
     });
-    return snapshot(game);
+    if (hudCard !== game.card || hudPhase !== game.phase || hudNext !== Boolean(game.startNext)) {
+      hud = snapshot(game);
+      hudCard = game.card;
+      hudPhase = game.phase;
+      hudNext = Boolean(game.startNext);
+    } else {
+      hud.settling = game.phase === "settling";
+      hud.resetIn = game.settleIn;
+    }
+    return hud;
   };
 
   return { group, update, alley: ALLEY };

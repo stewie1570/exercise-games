@@ -20,6 +20,13 @@ export const PIN_SPHERES = [
   { y: PIN_HEIGHT * 0.86, radius: PIN_HEAD * 0.5 },
 ];
 
+// Extra samples so a wing or prop strike on the neck still counts.
+export const PIN_HIT_SPHERES = [
+  ...PIN_SPHERES,
+  { y: PIN_HEIGHT * 0.55, radius: PIN_BELLY * 0.34 },
+  { y: PIN_HEIGHT * 0.72, radius: PIN_BELLY * 0.3 },
+];
+
 export const PIN_COM_Y = PIN_HEIGHT * 0.38;
 export const PIN_MASS = 90;
 
@@ -40,5 +47,6 @@ export const PLANE_HULLS = [
   { center: [0, 1.62, -0.15], half: [5.6, 0.28, 0.95] },
   { center: [0, 0.55, -0.15], half: [0.52, 0.52, 1.65] },
   { center: [0, 0.55, -1.52], half: [0.4, 0.4, 0.45] },
+  { center: [0, 0.55, -1.78], half: [1.25, 1.25, 0.4] },
   { center: [0, 0.58, 3.55], half: [1.3, 0.22, 0.4] },
 ];

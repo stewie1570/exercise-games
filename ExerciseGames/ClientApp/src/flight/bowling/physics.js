@@ -1,6 +1,7 @@
 import {
   PIN_COM_Y,
   PIN_HEIGHT,
+  PIN_HIT_SPHERES,
   PIN_MASS,
   PIN_SPACING,
   PIN_SPHERES,
@@ -19,12 +20,15 @@ const PLANE_RESTITUTION = 0.14;
 const MAX_PLANE_DV = 22;
 const STANDING_DOT = 0.55;
 const SUBSTEP = 1 / 48;
-const MAX_SUBSTEPS = 2;
+const MAX_SUBSTEPS = 1;
 const SLEEP_SPEED2 = 0.5 * 0.5;
 const SLEEP_SPIN2 = 0.7 * 0.7;
 const SLEEP_TIME = 0;
+const HIT_LOCK = 0.4;
+const MIN_HIT_SPEED = 8;
 const PAIR_RANGE2 = (PIN_SPACING * 1.35) ** 2;
-const PLANE_RANGE2 = 18 * 18;
+const PLANE_RANGE2 = 16 * 16;
+const SWEEP_STEP = 1.15;
 const I_BODY = inertia();
 const INV_I = [1 / I_BODY[0], 1 / I_BODY[1], 1 / I_BODY[2]];
 const UP = [0, 0, 0];
@@ -37,6 +41,8 @@ const PLANE_Q_INV = [0, 0, 0, 1];
 const LOCAL = [0, 0, 0];
 const CLOSEST = [0, 0, 0];
 const CONTACT = [0, 0, 0];
+const SPHERE = [0, 0, 0];
+const BEST_CONTACT = [0, 0, 0];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const hypot2 = (x, y, z) => x * x + y * y + z * z;
@@ -120,6 +126,12 @@ const wake = (pin) => {
   pin.still = 0;
 };
 
+const knock = (pin) => {
+  wake(pin);
+  pin.hitLock = HIT_LOCK;
+  pin.dirty = true;
+};
+
 export const createPinBody = (x, z) => {
   const pin = {
     rest: [x, PIN_COM_Y, z],
@@ -133,6 +145,7 @@ export const createPinBody = (x, z) => {
     sleeping: true,
     still: 0,
     dirty: true,
+    hitLock: 0,
   };
   writeSpheres(pin);
   return pin;
@@ -155,7 +168,24 @@ export const resetPin = (pin) => {
   pin.sleeping = true;
   pin.still = 0;
   pin.dirty = true;
+  pin.hitLock = 0;
   writeSpheres(pin);
+};
+
+const segmentNearPin = (ax, ay, az, bx, by, bz, pin) => {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const abz = bz - az;
+  const apx = pin.p[0] - ax;
+  const apy = pin.p[1] - ay;
+  const apz = pin.p[2] - az;
+  const ab2 = abx * abx + aby * aby + abz * abz;
+  let t = ab2 > 1e-8 ? (apx * abx + apy * aby + apz * abz) / ab2 : 0;
+  t = clamp(t, 0, 1);
+  const dx = ax + abx * t - pin.p[0];
+  const dy = ay + aby * t - pin.p[1];
+  const dz = az + abz * t - pin.p[2];
+  return dx * dx + dy * dy + dz * dz < PLANE_RANGE2;
 };
 
 export const stepPins = (pins, { state, dt, planeHit }) => {
@@ -177,43 +207,61 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
     moving = true;
   }
 
+  let prevX = 0;
+  let prevY = 0;
+  let prevZ = 0;
+  let sweepCount = 1;
   let planeNear = false;
   if (planeHit && state) {
-    yawQuat(state.heading || 0, PLANE_Q);
+    const heading = state.heading || 0;
+    const speed = state.speed || 0;
+    const travel = speed * dt;
+    yawQuat(heading, PLANE_Q);
     ORIGIN[0] = state.x;
     ORIGIN[1] = state.altitude;
     ORIGIN[2] = state.z;
-    PLANE_VEL[0] = Math.sin(state.heading || 0) * (state.speed || 0);
+    prevX = state.x - Math.sin(heading) * travel;
+    prevY = state.altitude - (state.climbRate || 0) * dt;
+    prevZ = state.z + Math.cos(heading) * travel;
+    PLANE_VEL[0] = Math.sin(heading) * speed;
     PLANE_VEL[1] = state.climbRate || 0;
-    PLANE_VEL[2] = -Math.cos(state.heading || 0) * (state.speed || 0);
+    PLANE_VEL[2] = -Math.cos(heading) * speed;
+    sweepCount = Math.min(4, Math.max(1, Math.ceil(travel / SWEEP_STEP)));
     for (let i = 0; i < pins.length; i += 1) {
       const pin = pins[i];
       if (pin.inactive) {
         continue;
       }
-      const dx = pin.p[0] - ORIGIN[0];
-      const dy = pin.p[1] - ORIGIN[1];
-      const dz = pin.p[2] - ORIGIN[2];
-      if (dx * dx + dy * dy + dz * dz < PLANE_RANGE2) {
-        wake(pin);
+      if (segmentNearPin(prevX, prevY, prevZ, ORIGIN[0], ORIGIN[1], ORIGIN[2], pin)) {
         planeNear = true;
-        moving = true;
+        break;
       }
     }
   }
 
-  if (!moving) {
+  if (!moving && !planeNear) {
     return false;
   }
 
   for (let step = 0; step < steps; step += 1) {
     integrate(pins, h);
-    if (planeNear && collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL)) {
-      hit = true;
+    if (planeNear) {
+      for (let sample = 0; sample < sweepCount; sample += 1) {
+        const t = sweepCount === 1 ? 1 : sample / (sweepCount - 1);
+        ORIGIN[0] = prevX + (state.x - prevX) * t;
+        ORIGIN[1] = prevY + (state.altitude - prevY) * t;
+        ORIGIN[2] = prevZ + (state.z - prevZ) * t;
+        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL)) {
+          hit = true;
+          break;
+        }
+      }
     }
-    collidePins(pins);
-    collideGround(pins, h);
-    trySleep(pins, h);
+    if (moving || hit) {
+      collidePins(pins);
+      collideGround(pins, h);
+      trySleep(pins, h);
+    }
   }
   return hit;
 };
@@ -393,6 +441,14 @@ const collideGround = (pins, dt) => {
   }
 };
 
+const sphereOnPin = (pin, sphere, out) => {
+  rotateLocalY(pin.q, sphere.y - PIN_COM_Y, out);
+  out[0] += pin.p[0];
+  out[1] += pin.p[1];
+  out[2] += pin.p[2];
+  return out;
+};
+
 const collidePlane = (pins, origin, q, planeVel) => {
   let hit = false;
   PLANE_Q_INV[0] = -q[0];
@@ -411,52 +467,118 @@ const collidePlane = (pins, origin, q, planeVel) => {
     if (pdx * pdx + pdy * pdy + pdz * pdz > PLANE_RANGE2) {
       continue;
     }
-    for (let s = 0; s < PIN_SPHERES.length; s += 1) {
-      const world = pin.sw[s];
-      const radius = PIN_SPHERES[s].radius;
-      rotateInto(PLANE_Q_INV, world[0] - origin[0], world[1] - origin[1], world[2] - origin[2], LOCAL);
-      for (let h = 0; h < PLANE_HULLS.length; h += 1) {
-        const hull = PLANE_HULLS[h];
-        CLOSEST[0] = clamp(LOCAL[0], hull.center[0] - hull.half[0], hull.center[0] + hull.half[0]);
-        CLOSEST[1] = clamp(LOCAL[1], hull.center[1] - hull.half[1], hull.center[1] + hull.half[1]);
-        CLOSEST[2] = clamp(LOCAL[2], hull.center[2] - hull.half[2], hull.center[2] + hull.half[2]);
-        rotateInto(q, CLOSEST[0], CLOSEST[1], CLOSEST[2], CONTACT);
-        CONTACT[0] += origin[0];
-        CONTACT[1] += origin[1];
-        CONTACT[2] += origin[2];
-        const dx = world[0] - CONTACT[0];
-        const dy = world[1] - CONTACT[1];
-        const dz = world[2] - CONTACT[2];
+    let bestPen = 0;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let s = 0; s < PIN_HIT_SPHERES.length; s += 1) {
+      const sphere = PIN_HIT_SPHERES[s];
+      const radius = sphere.radius;
+      sphereOnPin(pin, sphere, SPHERE);
+      rotateInto(
+        PLANE_Q_INV,
+        SPHERE[0] - origin[0],
+        SPHERE[1] - origin[1],
+        SPHERE[2] - origin[2],
+        LOCAL
+      );
+      for (let hullIndex = 0; hullIndex < PLANE_HULLS.length; hullIndex += 1) {
+        const hull = PLANE_HULLS[hullIndex];
+        const lx = LOCAL[0] - hull.center[0];
+        const ly = LOCAL[1] - hull.center[1];
+        const lz = LOCAL[2] - hull.center[2];
+        const cx = clamp(lx, -hull.half[0], hull.half[0]);
+        const cy = clamp(ly, -hull.half[1], hull.half[1]);
+        const cz = clamp(lz, -hull.half[2], hull.half[2]);
+        const dx = lx - cx;
+        const dy = ly - cy;
+        const dz = lz - cz;
         const dist2 = dx * dx + dy * dy + dz * dz;
-        if (dist2 >= radius * radius || dist2 < 1e-12) {
+        if (dist2 >= radius * radius) {
           continue;
         }
-        const dist = Math.sqrt(dist2);
-        const inv = 1 / dist;
-        const nx = dx * inv;
-        const ny = dy * inv;
-        const nz = dz * inv;
-        const penetration = radius - dist;
-        pin.p[0] += nx * penetration;
-        pin.p[1] += ny * penetration;
-        pin.p[2] += nz * penetration;
-        writeSpheres(pin);
-        velocityAt(pin, CONTACT, TMP);
-        const closing =
-          (TMP[0] - planeVel[0]) * nx + (TMP[1] - planeVel[1]) * ny + (TMP[2] - planeVel[2]) * nz;
-        hit = true;
-        if (closing >= 0) {
-          continue;
+        let faceX;
+        let faceY;
+        let faceZ;
+        let penetration;
+        let contactX;
+        let contactY;
+        let contactZ;
+        if (dist2 > 1e-12) {
+          const dist = Math.sqrt(dist2);
+          const inv = 1 / dist;
+          faceX = dx * inv;
+          faceY = dy * inv;
+          faceZ = dz * inv;
+          penetration = radius - dist;
+          rotateInto(q, cx + hull.center[0], cy + hull.center[1], cz + hull.center[2], CLOSEST);
+          contactX = CLOSEST[0] + origin[0];
+          contactY = CLOSEST[1] + origin[1];
+          contactZ = CLOSEST[2] + origin[2];
+        } else {
+          const px = hull.half[0] - Math.abs(lx);
+          const py = hull.half[1] - Math.abs(ly);
+          const pz = hull.half[2] - Math.abs(lz);
+          faceX = 0;
+          faceY = 0;
+          faceZ = 0;
+          if (px <= py && px <= pz) {
+            faceX = lx >= 0 ? 1 : -1;
+            penetration = radius + px;
+          } else if (py <= pz) {
+            faceY = ly >= 0 ? 1 : -1;
+            penetration = radius + py;
+          } else {
+            faceZ = lz >= 0 ? 1 : -1;
+            penetration = radius + pz;
+          }
+          rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+          faceX = CLOSEST[0];
+          faceY = CLOSEST[1];
+          faceZ = CLOSEST[2];
+          contactX = SPHERE[0] - faceX * radius;
+          contactY = SPHERE[1] - faceY * radius;
+          contactZ = SPHERE[2] - faceZ * radius;
         }
-        let jn = -(1 + PLANE_RESTITUTION) * closing * pin.mass;
-        const maxJ = pin.mass * MAX_PLANE_DV;
-        if (jn > maxJ) {
-          jn = maxJ;
+        if (dist2 > 1e-12) {
+          rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+          faceX = CLOSEST[0];
+          faceY = CLOSEST[1];
+          faceZ = CLOSEST[2];
         }
-        applyImpulse(pin, CONTACT, nx * jn, ny * jn, nz * jn);
-        writeSpheres(pin);
+        if (penetration > bestPen) {
+          bestPen = penetration;
+          nx = faceX;
+          ny = faceY;
+          nz = faceZ;
+          BEST_CONTACT[0] = contactX;
+          BEST_CONTACT[1] = contactY;
+          BEST_CONTACT[2] = contactZ;
+        }
       }
     }
+    if (bestPen <= 0) {
+      continue;
+    }
+    pin.p[0] += nx * bestPen;
+    pin.p[1] += ny * bestPen;
+    pin.p[2] += nz * bestPen;
+    writeSpheres(pin);
+    knock(pin);
+    hit = true;
+    velocityAt(pin, BEST_CONTACT, TMP);
+    const closing =
+      (TMP[0] - planeVel[0]) * nx + (TMP[1] - planeVel[1]) * ny + (TMP[2] - planeVel[2]) * nz;
+    let jn = closing < 0 ? -(1 + PLANE_RESTITUTION) * closing * pin.mass : 0;
+    const minJ = pin.mass * MIN_HIT_SPEED;
+    if (jn < minJ) {
+      jn = minJ;
+    }
+    const maxJ = pin.mass * MAX_PLANE_DV;
+    if (jn > maxJ) {
+      jn = maxJ;
+    }
+    applyImpulse(pin, BEST_CONTACT, nx * jn, ny * jn, nz * jn);
   }
   return hit;
 };
@@ -465,6 +587,10 @@ const trySleep = (pins, dt) => {
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
     if (pin.inactive || pin.sleeping) {
+      continue;
+    }
+    if (pin.hitLock > 0) {
+      pin.hitLock = Math.max(0, pin.hitLock - dt);
       continue;
     }
     let grounded = pin.p[1] < PIN_COM_Y + 0.85;

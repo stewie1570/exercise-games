@@ -29,6 +29,58 @@ test("the plane knocks a pin down without changing its own speed", () => {
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
 });
 
+test("a fuselage buried in the pin belly still counts as a hit", () => {
+  const pin = createPinBody(0, -2);
+  const state = {
+    x: 0,
+    z: -2 + 0.15,
+    altitude: PIN_HEIGHT * 0.32 - 0.55,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+  };
+  const hit = stepPins([pin], { state, dt: 0.016, planeHit: true });
+  expect(hit).toBe(true);
+  expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
+});
+
+test("the wing registers a hit on the pin neck", () => {
+  const pin = createPinBody(0, -2);
+  const state = {
+    x: 0,
+    z: -2 + 0.15,
+    altitude: PIN_HEIGHT * 0.55 - 1.62,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+  };
+  const hit = stepPins([pin], { state, dt: 0.016, planeHit: true });
+  expect(hit).toBe(true);
+  expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
+});
+
+test("a fast sweep still knocks a pin the prop passes through", () => {
+  const pin = createPinBody(0, 0);
+  const dt = 0.12;
+  const travel = 42 * dt;
+  const endZ = 1.78 - 2.5;
+  const state = {
+    x: 0,
+    z: endZ,
+    altitude: PIN_HEIGHT * 0.32 - 0.55,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+  };
+  const startPropZ = endZ - travel - 1.78;
+  const endPropZ = endZ - 1.78;
+  expect(Math.abs(startPropZ)).toBeGreaterThan(PIN_BELLY * 0.5 + 0.4);
+  expect(Math.abs(endPropZ)).toBeGreaterThan(PIN_BELLY * 0.5 + 0.4);
+  const hit = stepPins([pin], { state, dt, planeHit: true });
+  expect(hit).toBe(true);
+  expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
+});
+
 test("a moving pin knocks into a neighbor", () => {
   const a = createPinBody(0, 0);
   const b = createPinBody(PIN_SPACING * 0.92, 0);

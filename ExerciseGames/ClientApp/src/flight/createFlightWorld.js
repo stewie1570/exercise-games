@@ -40,8 +40,12 @@ export const createFlightWorld = (container) => {
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, DRAW_DISTANCE + 80);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const dpr = window.devicePixelRatio || 1;
+  const renderer = new THREE.WebGLRenderer({
+    antialias: dpr < 1.5,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(dpr, 1.5));
   renderer.domElement.style.display = "block";
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
@@ -127,10 +131,18 @@ export const createFlightWorld = (container) => {
   };
 
   const dispose = () => {
+    const disposed = new Set();
     scene.traverse((object) => {
-      object.geometry?.dispose?.();
+      if (object.geometry && !disposed.has(object.geometry)) {
+        disposed.add(object.geometry);
+        object.geometry.dispose();
+      }
       const materials = object.material ? [].concat(object.material) : [];
       materials.forEach((material) => {
+        if (disposed.has(material)) {
+          return;
+        }
+        disposed.add(material);
         material.map?.dispose?.();
         material.dispose?.();
       });
