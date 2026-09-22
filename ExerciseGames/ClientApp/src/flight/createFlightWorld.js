@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CHUNK_SIZE, DRAW_DISTANCE, chunkCenter, chunkIndex, isChunkInRange } from "./chunkCull";
+import { createBowling, pointInAlley } from "./bowling/createBowling";
 import { FLIGHT } from "./physics";
 
 const GROUND_Y = 0;
@@ -67,6 +68,9 @@ export const createFlightWorld = (container) => {
   const aircraft = createUltralight();
   scene.add(aircraft);
 
+  const bowling = createBowling();
+  scene.add(bowling.group);
+
   const lookAt = new THREE.Vector3();
   const chaseLocal = new THREE.Vector3(0, 2.15, 9.2);
   const focusLocal = new THREE.Vector3(0, 0.7, -0.4);
@@ -105,6 +109,7 @@ export const createFlightWorld = (container) => {
     camera.up.copy(cameraUp);
     camera.lookAt(lookAt);
     camera.updateMatrixWorld();
+    const bowlingHud = bowling.update(state, dt);
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen);
     for (const chunk of chunks) {
@@ -118,6 +123,7 @@ export const createFlightWorld = (container) => {
       chunk.visible = frustum.intersectsSphere(chunkSphere);
     }
     renderer.render(scene, camera);
+    return bowlingHud;
   };
 
   const dispose = () => {
@@ -482,6 +488,9 @@ const createTrees = (add) => {
     [20, 240], [-60, 160], [70, -300],
   ];
   spots.forEach(([x, z], index) => {
+    if (pointInAlley(x, z, 12)) {
+      return;
+    }
     const height = 8 + (index % 5) * 1.5;
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.5, 0.7, 3, 6),
