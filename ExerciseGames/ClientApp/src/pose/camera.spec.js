@@ -35,6 +35,10 @@ test("openCameraStream retries NotReadableError then succeeds", async () => {
   ).resolves.toBe(stream);
 
   expect(getUserMedia).toHaveBeenCalledTimes(2);
+  expect(getUserMedia).toHaveBeenCalledWith({
+    audio: false,
+    video: { width: { min: 1280, ideal: 1280 }, height: { min: 720, ideal: 720 } },
+  });
   expect(delay).toHaveBeenCalledWith(250);
   expect(enumerateDevices).toHaveBeenCalledTimes(1);
 });

@@ -23,6 +23,11 @@ const defaultEnumerateDevices = () =>
   navigator.mediaDevices.enumerateDevices?.() ?? Promise.resolve([]);
 const defaultDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export const CAMERA_VIDEO_CONSTRAINTS = {
+  width: { min: 1280, ideal: 1280 },
+  height: { min: 720, ideal: 720 },
+};
+
 export const openCameraStream = async ({
   getUserMedia = defaultGetUserMedia,
   enumerateDevices = defaultEnumerateDevices,
@@ -30,7 +35,7 @@ export const openCameraStream = async ({
   retries = 3,
   retryDelayMs = 250,
 } = {}) => {
-  const constraints = { audio: false, video: true };
+  const constraints = { audio: false, video: CAMERA_VIDEO_CONSTRAINTS };
   let lastError;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
