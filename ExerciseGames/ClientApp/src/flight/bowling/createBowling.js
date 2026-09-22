@@ -35,6 +35,7 @@ export const createBowling = () => {
   const bodies = pinSlots().map((slot) => createPinBody(originX + slot.x, originZ + slot.z));
   const meshes = bodies.map((body) => {
     const mesh = createPinMesh();
+    mesh.matrixAutoUpdate = false;
     pinsGroup.add(mesh);
     syncPinMesh(mesh, body);
     return mesh;
@@ -46,8 +47,9 @@ export const createBowling = () => {
     stepBowlingGame(game, { state, dt });
     bodies.forEach((body, index) => {
       meshes[index].visible = !body.inactive;
-      if (!body.inactive) {
+      if (!body.inactive && (!body.sleeping || body.dirty)) {
         syncPinMesh(meshes[index], body);
+        body.dirty = false;
       }
     });
     return snapshot(game);
@@ -88,11 +90,12 @@ const snapshot = (game) => ({
 const syncPinMesh = (mesh, body) => {
   mesh.position.set(body.p[0], body.p[1], body.p[2]);
   mesh.quaternion.set(body.q[0], body.q[1], body.q[2], body.q[3]);
+  mesh.updateMatrix();
 };
 
 const createPinMesh = () => {
   const points = pinProfile().map(([radius, y]) => new THREE.Vector2(radius, y));
-  const geometry = new THREE.LatheGeometry(points, 14);
+  const geometry = new THREE.LatheGeometry(points, 10);
   geometry.translate(0, -PIN_HEIGHT * 0.38, 0);
   const pin = new THREE.Mesh(
     geometry,

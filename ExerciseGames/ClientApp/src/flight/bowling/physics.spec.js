@@ -33,10 +33,25 @@ test("a moving pin knocks into a neighbor", () => {
   const a = createPinBody(0, 0);
   const b = createPinBody(PIN_SPACING * 0.92, 0);
   a.v = [18, 0, 0];
+  a.sleeping = false;
+  let peak = 0;
   for (let i = 0; i < 50; i += 1) {
     stepPins([a, b], { state: null, dt: 0.016, planeHit: false });
+    peak = Math.max(peak, Math.hypot(b.v[0], b.v[1], b.v[2]));
   }
-  expect(Math.hypot(b.v[0], b.v[1], b.v[2])).toBeGreaterThan(0.5);
+  expect(peak).toBeGreaterThan(0.5);
+});
+
+test("a kicked pin settles and sleeps within about a second", () => {
+  const pin = createPinBody(0, 0);
+  pin.v = [8, 2, 0];
+  pin.w = [1.2, 0, 0.4];
+  pin.sleeping = false;
+  for (let i = 0; i < 75; i += 1) {
+    stepPins([pin], { state: null, dt: 0.016, planeHit: false });
+  }
+  expect(pin.sleeping).toBe(true);
+  expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeLessThan(0.5);
 });
 
 test("a tipped pin counts as fallen and reset stands it back up", () => {

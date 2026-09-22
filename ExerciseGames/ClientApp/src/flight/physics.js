@@ -8,8 +8,8 @@ export const FLIGHT = {
   maxClimbRate: 11,
   maxDescendRate: 15,
   maxTurnRate: 0.95,
-  climbTau: 1.15,
-  climbCommandTau: 1.15,
+  climbTau: 0.75,
+  climbCommandTau: 0.55,
   minAltitude: 1.4,
   maxAltitude: 240,
 };
