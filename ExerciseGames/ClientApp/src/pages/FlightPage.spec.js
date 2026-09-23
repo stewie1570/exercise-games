@@ -38,6 +38,8 @@ test("flight page explains arm flaps and tilt steering", () => {
   expect(screen.getByRole("button", { name: "Starting..." })).toBeInTheDocument();
   expect(screen.getByText(/camera starts automatically/i)).toBeInTheDocument();
   expect(screen.getByText(/both arms out past 40/i)).toBeInTheDocument();
+  expect(screen.getByText(/bowling alley sits east of the runway/i)).toBeInTheDocument();
+  expect(screen.getByLabelText("Bowling scoreboard")).toBeInTheDocument();
   expect(screen.getByText("Parked")).toBeInTheDocument();
   expect(screen.getAllByRole("button", { name: "Full screen" }).length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");

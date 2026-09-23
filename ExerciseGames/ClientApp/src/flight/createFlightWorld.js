@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CHUNK_SIZE, DRAW_DISTANCE, chunkCenter, chunkIndex, isChunkInRange } from "./chunkCull";
+import { createBowling, pointInAlley } from "./bowling/createBowling";
 import { FLIGHT } from "./physics";
 
 const GROUND_Y = 0;
@@ -39,8 +40,12 @@ export const createFlightWorld = (container) => {
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, DRAW_DISTANCE + 80);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const dpr = window.devicePixelRatio || 1;
+  const renderer = new THREE.WebGLRenderer({
+    antialias: dpr < 1.5,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(dpr, 1.5));
   renderer.domElement.style.display = "block";
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
@@ -66,6 +71,9 @@ export const createFlightWorld = (container) => {
 
   const aircraft = createUltralight();
   scene.add(aircraft);
+
+  const bowling = createBowling();
+  scene.add(bowling.group);
 
   const lookAt = new THREE.Vector3();
   const chaseLocal = new THREE.Vector3(0, 2.15, 9.2);
@@ -105,6 +113,7 @@ export const createFlightWorld = (container) => {
     camera.up.copy(cameraUp);
     camera.lookAt(lookAt);
     camera.updateMatrixWorld();
+    const bowlingHud = bowling.update(state, dt);
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen);
     for (const chunk of chunks) {
@@ -118,13 +127,22 @@ export const createFlightWorld = (container) => {
       chunk.visible = frustum.intersectsSphere(chunkSphere);
     }
     renderer.render(scene, camera);
+    return bowlingHud;
   };
 
   const dispose = () => {
+    const disposed = new Set();
     scene.traverse((object) => {
-      object.geometry?.dispose?.();
+      if (object.geometry && !disposed.has(object.geometry)) {
+        disposed.add(object.geometry);
+        object.geometry.dispose();
+      }
       const materials = object.material ? [].concat(object.material) : [];
       materials.forEach((material) => {
+        if (disposed.has(material)) {
+          return;
+        }
+        disposed.add(material);
         material.map?.dispose?.();
         material.dispose?.();
       });
@@ -482,6 +500,9 @@ const createTrees = (add) => {
     [20, 240], [-60, 160], [70, -300],
   ];
   spots.forEach(([x, z], index) => {
+    if (pointInAlley(x, z, 12)) {
+      return;
+    }
     const height = 8 + (index % 5) * 1.5;
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.5, 0.7, 3, 6),

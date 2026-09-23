@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import { AppNav } from "../components/AppNav";
 import { createFlightWorld } from "../flight/createFlightWorld";
+import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { FlapDetector } from "../flight/flapThrottle";
 import { createAircraftState, FLIGHT, stepAircraft } from "../flight/physics";
 import { steeringFromTilt } from "../flight/tiltSteering";
@@ -141,6 +142,7 @@ export const FlightPage = () => {
     climbRate: 0,
     flapsPerSec: 0,
     moving: false,
+    bowling: null,
   });
 
   const { status, error, startCamera, stopCamera } = usePoseCamera({
@@ -192,7 +194,7 @@ export const FlightPage = () => {
       controls.flapsPerSec = flapRef.current.flapsPerSec;
       controls.flapping = flapRef.current.throttle > 0;
       aircraftRef.current = stepAircraft(aircraftRef.current, controls, dt);
-      world.update(aircraftRef.current, dt);
+      const bowling = world.update(aircraftRef.current, dt);
       if (now - lastHud > 100) {
         lastHud = now;
         setHud({
@@ -202,6 +204,7 @@ export const FlightPage = () => {
           climbRate: aircraftRef.current.climbRate,
           flapsPerSec: controls.flapsPerSec,
           moving: aircraftRef.current.moving,
+          bowling,
         });
       }
       frameId = requestAnimationFrame(loop);
@@ -235,7 +238,8 @@ export const FlightPage = () => {
             The camera starts automatically. Hold both arms out past 40°, then flap to take off:
             two flaps per second is full throttle, and staying still is none. Faster flapping
             climbs. A steady medium flap holds altitude. Stop flapping and you glide down. Tilt
-            your body or neck to turn.
+            your body or neck to turn. A bowling alley sits east of the runway — fly through the
+            pins to knock them down and keep score.
           </p>
           {running ? (
             <button className="btn btn-secondary" type="button" onClick={stopCamera}>
@@ -279,6 +283,7 @@ export const FlightPage = () => {
               <MaintainMark />
             </ThrottleTrack>
           </div>
+          <BowlingScoreboard bowling={hud.bowling} />
           <div>Alt {Math.round(hud.altitude)} m</div>
           <div>HDG {headingDeg.toFixed(0).padStart(3, "0")}</div>
           <div>

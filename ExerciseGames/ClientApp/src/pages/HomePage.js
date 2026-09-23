@@ -46,7 +46,7 @@ export const HomePage = () => (
         <h2>Ultralight flight</h2>
         <p>
           Hold both arms out and flap for throttle, then tilt your body or neck to turn. Chase-cam
-          over Meadow Airport, rivers, roads, and the surrounding mountains.
+          over Meadow Airport. Knock down the bowling pins east of the runway to keep score.
         </p>
       </CardLink>
       <CardLink className="card" to="/diagnostics">

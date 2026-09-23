@@ -47,6 +47,25 @@ test("vertical speed accelerates instead of jumping to the climb target", () => 
   expect(second.climbRate).toBeLessThan(target * 0.3);
 });
 
+test("zero-throttle descent converts to climb in about 1.25 seconds", () => {
+  let state = {
+    ...createAircraftState(),
+    altitude: 80,
+    moving: true,
+    speed: FLIGHT.airspeed,
+    climbRate: targetClimbRate(0),
+    climbCommand: targetClimbRate(0),
+  };
+  for (let i = 0; i < 20; i += 1) {
+    state = stepAircraft(state, { throttle: 1, turn: 0 }, 0.05);
+  }
+  expect(state.climbRate).toBeLessThanOrEqual(0.5);
+  for (let i = 0; i < 5; i += 1) {
+    state = stepAircraft(state, { throttle: 1, turn: 0 }, 0.05);
+  }
+  expect(state.climbRate).toBeGreaterThan(0);
+});
+
 test("airspeed stays constant while heading follows right tilt", () => {
   const started = { ...createAircraftState(), moving: true };
   const next = stepAircraft(started, { throttle: FLIGHT.maintainThrottle, turn: 1 }, 1);
