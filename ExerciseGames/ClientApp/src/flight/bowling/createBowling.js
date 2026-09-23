@@ -4,13 +4,11 @@ import {
   PIN_BELLY,
   PIN_HEAD,
   PIN_HEIGHT,
-  PIN_RESET_DELAY,
   PIN_SPACING,
   pinSlots,
 } from "./dimensions";
-import { createBowlingGame, stepBowlingGame } from "./game";
+import { bowlingHud, createBowlingGame, stepBowlingGame } from "./game";
 import { createPinBody } from "./physics";
-import { currentFrameIndex, frameTotals, gameTotal, isGameOver, rollMarks } from "./score";
 
 export const ALLEY = {
   x: 72,
@@ -43,13 +41,12 @@ export const createBowling = () => {
   });
 
   const game = createBowlingGame(bodies);
-  let hud = snapshot(game);
+  let hud = bowlingHud(game);
   let hudCard = game.card;
   let hudPhase = game.phase;
   let hudNext = game.startNext;
 
-  const update = (state, dt) => {
-    stepBowlingGame(game, { state, dt });
+  const syncMeshes = () => {
     bodies.forEach((body, index) => {
       const mesh = meshes[index];
       const visible = !body.inactive;
@@ -61,8 +58,11 @@ export const createBowling = () => {
         body.dirty = false;
       }
     });
+  };
+
+  const hudSnapshot = () => {
     if (hudCard !== game.card || hudPhase !== game.phase || hudNext !== Boolean(game.startNext)) {
-      hud = snapshot(game);
+      hud = bowlingHud(game);
       hudCard = game.card;
       hudPhase = game.phase;
       hudNext = Boolean(game.startNext);
@@ -73,7 +73,13 @@ export const createBowling = () => {
     return hud;
   };
 
-  return { group, update, alley: ALLEY };
+  const update = (state, dt) => {
+    stepBowlingGame(game, { state, dt });
+    syncMeshes();
+    return hudSnapshot();
+  };
+
+  return { group, update, alley: ALLEY, game, syncMeshes, hud: hudSnapshot };
 };
 
 export const alleyBounds = () => ({
@@ -92,18 +98,6 @@ export const pointInAlley = (x, z, pad = 6) => {
     z < bounds.maxZ + pad
   );
 };
-
-const snapshot = (game) => ({
-  frames: game.card.frames,
-  marks: rollMarks(game.card.frames),
-  totals: frameTotals(game.card.frames),
-  total: gameTotal(game.card.frames),
-  frame: currentFrameIndex(game.card.frames) + 1,
-  settling: game.phase === "settling",
-  resetIn: game.settleIn,
-  gameOver: isGameOver(game.card.frames) || Boolean(game.startNext),
-  delay: PIN_RESET_DELAY,
-});
 
 const syncPinMesh = (mesh, body) => {
   mesh.position.set(body.p[0], body.p[1], body.p[2]);

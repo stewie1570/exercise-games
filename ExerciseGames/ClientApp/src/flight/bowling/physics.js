@@ -132,6 +132,39 @@ const knock = (pin) => {
   pin.dirty = true;
 };
 
+export const capturePin = (pin) => ({
+  p: [pin.p[0], pin.p[1], pin.p[2]],
+  q: [pin.q[0], pin.q[1], pin.q[2], pin.q[3]],
+  v: [pin.v[0], pin.v[1], pin.v[2]],
+  w: [pin.w[0], pin.w[1], pin.w[2]],
+  inactive: Boolean(pin.inactive),
+  sleeping: Boolean(pin.sleeping),
+  still: pin.still || 0,
+  hitLock: pin.hitLock || 0,
+});
+
+export const restorePin = (pin, data) => {
+  pin.p[0] = data.p[0];
+  pin.p[1] = data.p[1];
+  pin.p[2] = data.p[2];
+  pin.q[0] = data.q[0];
+  pin.q[1] = data.q[1];
+  pin.q[2] = data.q[2];
+  pin.q[3] = data.q[3];
+  pin.v[0] = data.v[0];
+  pin.v[1] = data.v[1];
+  pin.v[2] = data.v[2];
+  pin.w[0] = data.w[0];
+  pin.w[1] = data.w[1];
+  pin.w[2] = data.w[2];
+  pin.inactive = Boolean(data.inactive);
+  pin.sleeping = Boolean(data.sleeping);
+  pin.still = data.still || 0;
+  pin.hitLock = data.hitLock || 0;
+  pin.dirty = true;
+  writeSpheres(pin);
+};
+
 export const createPinBody = (x, z) => {
   const pin = {
     rest: [x, PIN_COM_Y, z],
