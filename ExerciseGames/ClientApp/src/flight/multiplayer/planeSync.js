@@ -1,6 +1,66 @@
 import { createAircraftState, stepAircraft } from "../physics";
 
-export const PLANE_BROADCAST_MS = 1000;
+export const PLANE_BROADCAST_MS = 100;
+
+export const createPlaneCadence = ({
+  send,
+  intervalMs = PLANE_BROADCAST_MS,
+  schedule = setTimeout,
+  cancel = clearTimeout,
+}) => {
+  let stopped = false;
+  let hurry = false;
+  let wake = null;
+  let timer = null;
+
+  const pause = (ms) => new Promise((resolve) => {
+    wake = () => {
+      wake = null;
+      timer = null;
+      resolve();
+    };
+    timer = schedule(wake, ms);
+  });
+
+  const run = async () => {
+    while (!stopped) {
+      try {
+        await send();
+      } catch {
+        // A failed send still opens the gap before the next try.
+      }
+      if (stopped) {
+        return;
+      }
+      if (hurry) {
+        hurry = false;
+        continue;
+      }
+      await pause(intervalMs);
+    }
+  };
+
+  const done = run();
+
+  return {
+    requestImmediate() {
+      if (wake) {
+        cancel(timer);
+        wake();
+        return;
+      }
+      hurry = true;
+    },
+    stop() {
+      stopped = true;
+      if (wake) {
+        cancel(timer);
+        wake();
+      }
+      return done;
+    },
+  };
+};
 
 export const PILOT_TINTS = [
   { body: 0xf59e0b, stripe: 0x0369a1 },

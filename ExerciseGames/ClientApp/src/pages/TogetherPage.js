@@ -51,7 +51,7 @@ export const TogetherPage = () => {
                   ? "You are the host. Pins and the scoreboard live on your machine and are sent to the room."
                   : "You joined the host's lane. Your plane is local. Pin hits are sent to the host, who sends back each pin's trajectory."}
                 {" "}
-                Plane positions go out about once a second, and immediately when someone hits a pin.
+                Plane positions go out about ten times a second, and immediately when someone hits a pin.
               </p>
               <p className="mb-1">Room code</p>
               <Code>{session.room.code}</Code>

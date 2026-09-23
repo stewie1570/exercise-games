@@ -4,8 +4,8 @@ import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { createFlightWorld } from "../flight/createFlightWorld";
 import { FlapDetector } from "../flight/flapThrottle";
 import {
-  PLANE_BROADCAST_MS,
   adoptPlaneSnapshot,
+  createPlaneCadence,
   createRemotePilot,
   extrapolatePilot,
   pilotTint,
@@ -25,6 +25,8 @@ import { FLIGHT, stepAircraft } from "../flight/physics";
 import { steeringFromTilt } from "../flight/tiltSteering";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { usePoseCamera } from "../hooks/usePoseCamera";
+
+const PIN_BROADCAST_MS = 1000;
 
 const Stage = styled.div`
   position: relative;
@@ -209,19 +211,20 @@ export const CollaborativeFlight = ({ session }) => {
 
     let last = performance.now();
     let lastHud = 0;
-    let lastPlane = 0;
     let lastPins = 0;
     let announced = "";
     let frameId = 0;
 
-    const publishPlane = (force, at) => {
-      const live = sessionRef.current;
-      if (!force && at - lastPlane < PLANE_BROADCAST_MS) {
-        return;
-      }
-      lastPlane = at;
-      live.sendPlane(snapshotAircraft(aircraftRef.current, at));
-    };
+    const planes = createPlaneCadence({
+      send: () => {
+        const live = sessionRef.current;
+        const aircraft = aircraftRef.current;
+        if (!aircraft) {
+          return Promise.resolve();
+        }
+        return Promise.resolve(live.sendPlane(snapshotAircraft(aircraft, live.now())));
+      },
+    });
 
     const publishPins = (reason) => {
       const live = sessionRef.current;
@@ -230,7 +233,7 @@ export const CollaborativeFlight = ({ session }) => {
         return;
       }
       const at = live.now();
-      if (reason === "cadence" && at - lastPins < PLANE_BROADCAST_MS) {
+      if (reason === "cadence" && at - lastPins < PIN_BROADCAST_MS) {
         return;
       }
       lastPins = at;
@@ -302,7 +305,7 @@ export const CollaborativeFlight = ({ session }) => {
           || Boolean(game.startNext) !== beforeNext;
         if (hit && !contactRef.current) {
           contactRef.current = true;
-          publishPlane(true, at);
+          planes.requestImmediate();
           publishPins("hit");
         } else if (!hit) {
           contactRef.current = false;
@@ -323,14 +326,13 @@ export const CollaborativeFlight = ({ session }) => {
           const hitId = `${live.connectionId}:${at}`;
           pendingHitsRef.current = [...pendingHitsRef.current, hitId];
           const plane = snapshotAircraft(aircraftRef.current, at);
-          publishPlane(true, at);
+          planes.requestImmediate();
           live.sendPinHit({ hitId, t: at, dt, plane });
         } else if (!hit) {
           contactRef.current = false;
         }
       }
 
-      publishPlane(false, at);
       const shown = world.update(aircraftRef.current, dt, {
         simulateBowling: false,
         remotes,
@@ -353,6 +355,7 @@ export const CollaborativeFlight = ({ session }) => {
     frameId = requestAnimationFrame(loop);
 
     return () => {
+      planes.stop();
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);

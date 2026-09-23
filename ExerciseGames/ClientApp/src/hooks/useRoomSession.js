@@ -113,9 +113,9 @@ export const useRoomSession = () => {
 
   const send = (method, payload) => {
     if (!connection.current || connection.current.state !== "Connected") {
-      return;
+      return Promise.resolve();
     }
-    connection.current.send(method, payload).catch(() => {});
+    return connection.current.send(method, payload).catch(() => {});
   };
 
   const sendPlane = (state) => send("Plane", state);

@@ -1,7 +1,10 @@
+import { vi } from "vitest";
 import { createAircraftState } from "../physics";
 import {
   FORMATION_SPACING,
+  PLANE_BROADCAST_MS,
   adoptPlaneSnapshot,
+  createPlaneCadence,
   createRemotePilot,
   createServerClock,
   extrapolatePilot,
@@ -45,6 +48,76 @@ test("a remote plane keeps flying on the last controls until the next snapshot",
 
   adoptPlaneSnapshot(pilot, snapshotAircraft(state, 3000), 4000);
   expect(pilot.state.z).toBeLessThan(state.z);
+});
+
+test("the next plane update waits until the previous send finishes, then 100ms", async () => {
+  vi.useFakeTimers();
+  try {
+    const resolvers = [];
+    const send = vi.fn(() => new Promise((resolve) => {
+      resolvers.push(resolve);
+    }));
+    const cadence = createPlaneCadence({ send, intervalMs: PLANE_BROADCAST_MS });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    resolvers[0]();
+    await vi.advanceTimersByTimeAsync(99);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    resolvers[1]();
+    await cadence.stop();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a hit during the gap sends the plane without waiting out the rest", async () => {
+  vi.useFakeTimers();
+  try {
+    const send = vi.fn(() => Promise.resolve());
+    const cadence = createPlaneCadence({ send, intervalMs: PLANE_BROADCAST_MS });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(40);
+    cadence.requestImmediate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    await cadence.stop();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a hit sends the plane again without waiting out the gap", async () => {
+  vi.useFakeTimers();
+  try {
+    const resolvers = [];
+    const send = vi.fn(() => new Promise((resolve) => {
+      resolvers.push(resolve);
+    }));
+    const cadence = createPlaneCadence({ send, intervalMs: PLANE_BROADCAST_MS });
+    await vi.advanceTimersByTimeAsync(0);
+    cadence.requestImmediate();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    resolvers[0]();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    resolvers[1]();
+    await cadence.stop();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("the server clock estimates offset from a round trip", () => {
