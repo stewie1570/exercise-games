@@ -15,9 +15,6 @@ test("pilots spawn apart and keep a stable color", () => {
   const second = spawnAircraft(1);
   expect(second.x - first.x).toBe(FORMATION_SPACING);
   expect(second.z).toBeLessThan(first.z);
-  const cameraZ = first.z + 42;
-  const angle = Math.atan2(Math.abs(second.x - first.x), cameraZ - second.z);
-  expect(angle).toBeLessThan((40 * Math.PI) / 180);
   expect(pilotTint(0)).toEqual(pilotTint(8));
   expect(pilotTint(1).body).not.toBe(pilotTint(0).body);
 });

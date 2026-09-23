@@ -12,8 +12,6 @@ import {
   snapshotAircraft,
   spawnAircraft,
 } from "../flight/multiplayer/planeSync";
-
-const CHASE_OFFSET = [0, 7, 42];
 import {
   applyPinBroadcast,
   buildPinBroadcast,
@@ -200,7 +198,7 @@ export const CollaborativeFlight = ({ session }) => {
     const slot = Math.max(0, players.indexOf(current.connectionId));
     const aircraft = spawnAircraft(slot);
     aircraftRef.current = aircraft;
-    const world = createFlightWorld(host, { localTint: pilotTint(slot), chaseOffset: CHASE_OFFSET });
+    const world = createFlightWorld(host, { localTint: pilotTint(slot) });
     worldRef.current = world;
     world.update(aircraft, 0.016, { simulateBowling: false });
 

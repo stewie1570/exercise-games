@@ -34,7 +34,7 @@ const colors = {
   prop: 0x111827,
 };
 
-export const createFlightWorld = (container, { localTint, chaseOffset } = {}) => {
+export const createFlightWorld = (container, { localTint } = {}) => {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b7e0);
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
@@ -78,11 +78,7 @@ export const createFlightWorld = (container, { localTint, chaseOffset } = {}) =>
   scene.add(bowling.group);
 
   const lookAt = new THREE.Vector3();
-  const chaseLocal = new THREE.Vector3(
-    chaseOffset?.[0] ?? 0,
-    chaseOffset?.[1] ?? 2.15,
-    chaseOffset?.[2] ?? 9.2
-  );
+  const chaseLocal = new THREE.Vector3(0, 2.15, 9.2);
   const focusLocal = new THREE.Vector3(0, 0.7, -0.4);
   const cameraUp = new THREE.Vector3();
   const frustum = new THREE.Frustum();
