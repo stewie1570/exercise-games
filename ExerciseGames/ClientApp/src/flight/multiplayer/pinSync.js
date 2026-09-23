@@ -102,13 +102,14 @@ export const createPinHistory = () => {
   };
 };
 
-export const buildPinBroadcast = ({ revision, t, game, appliedHitIds, reason }) => ({
+export const buildPinBroadcast = ({ revision, t, game, appliedHitIds, reason, plane }) => ({
   revision,
   t,
   pins: game.pins.map(capturePin),
   score: bowlingHud(game),
   appliedHitIds: [...appliedHitIds],
   reason,
+  plane: plane ?? null,
 });
 
 export const shouldApplyPinState = ({ payload, lastRevision, pendingHitIds }) => {

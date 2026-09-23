@@ -12,6 +12,8 @@ import {
   snapshotAircraft,
   spawnAircraft,
 } from "../flight/multiplayer/planeSync";
+
+const CHASE_OFFSET = [0, 7, 42];
 import {
   applyPinBroadcast,
   buildPinBroadcast,
@@ -198,7 +200,7 @@ export const CollaborativeFlight = ({ session }) => {
     const slot = Math.max(0, players.indexOf(current.connectionId));
     const aircraft = spawnAircraft(slot);
     aircraftRef.current = aircraft;
-    const world = createFlightWorld(host, { localTint: pilotTint(slot) });
+    const world = createFlightWorld(host, { localTint: pilotTint(slot), chaseOffset: CHASE_OFFSET });
     worldRef.current = world;
     world.update(aircraft, 0.016, { simulateBowling: false });
 
@@ -241,6 +243,7 @@ export const CollaborativeFlight = ({ session }) => {
         game,
         appliedHitIds: historyRef.current.appliedHitIds,
         reason,
+        plane: snapshotAircraft(aircraftRef.current, at),
       }));
     };
     publishPinsRef.current = publishPins;
@@ -270,8 +273,13 @@ export const CollaborativeFlight = ({ session }) => {
         if (id === live.connectionId) {
           return;
         }
-        const pilot = pilotsRef.current.get(id);
-        if (!pilot?.state) {
+        let pilot = pilotsRef.current.get(id);
+        if (!pilot) {
+          pilot = createRemotePilot(id);
+          adoptPlaneSnapshot(pilot, snapshotAircraft(spawnAircraft(index), at), at);
+          pilotsRef.current.set(id, pilot);
+        }
+        if (!pilot.state) {
           return;
         }
         extrapolatePilot(pilot, dt);
@@ -397,6 +405,15 @@ export const CollaborativeFlight = ({ session }) => {
           return;
         }
         applyPinBroadcast(game, payload);
+        if (payload.plane && live.room?.hostConnectionId) {
+          const hostId = live.room.hostConnectionId;
+          let pilot = pilotsRef.current.get(hostId);
+          if (!pilot) {
+            pilot = createRemotePilot(hostId);
+            pilotsRef.current.set(hostId, pilot);
+          }
+          adoptPlaneSnapshot(pilot, payload.plane, live.now());
+        }
         const late = Math.min(0.5, Math.max(0, (live.now() - payload.t) / 1000));
         if (late > 0) {
           stepPins(game.pins, { state: null, dt: late, planeHit: false });

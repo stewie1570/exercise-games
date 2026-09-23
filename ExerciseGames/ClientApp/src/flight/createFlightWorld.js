@@ -34,7 +34,7 @@ const colors = {
   prop: 0x111827,
 };
 
-export const createFlightWorld = (container, { localTint } = {}) => {
+export const createFlightWorld = (container, { localTint, chaseOffset } = {}) => {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b7e0);
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
@@ -78,7 +78,11 @@ export const createFlightWorld = (container, { localTint } = {}) => {
   scene.add(bowling.group);
 
   const lookAt = new THREE.Vector3();
-  const chaseLocal = new THREE.Vector3(0, 2.15, 9.2);
+  const chaseLocal = new THREE.Vector3(
+    chaseOffset?.[0] ?? 0,
+    chaseOffset?.[1] ?? 2.15,
+    chaseOffset?.[2] ?? 9.2
+  );
   const focusLocal = new THREE.Vector3(0, 0.7, -0.4);
   const cameraUp = new THREE.Vector3();
   const frustum = new THREE.Frustum();
@@ -560,6 +564,7 @@ const poseCraft = (craft, state, dt) => {
 
 const createUltralight = (tint) => {
   const group = new THREE.Group();
+  group.frustumCulled = false;
   const bodyMat = new THREE.MeshLambertMaterial({ color: tint?.body ?? colors.planeBody });
   const wingMat = new THREE.MeshLambertMaterial({ color: colors.planeWing });
   const darkMat = new THREE.MeshLambertMaterial({ color: colors.planeAccent });

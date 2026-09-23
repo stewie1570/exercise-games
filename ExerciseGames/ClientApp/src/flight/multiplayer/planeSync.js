@@ -15,9 +15,17 @@ export const PILOT_TINTS = [
 
 export const pilotTint = (slot) => PILOT_TINTS[Math.abs(slot) % PILOT_TINTS.length];
 
+export const FORMATION_SPACING = 16;
+
 export const spawnAircraft = (slot) => {
   const state = createAircraftState();
-  return { ...state, x: state.x + Math.max(0, slot) * 18 };
+  const index = Math.max(0, slot);
+  const side = index === 0 ? 0 : (index % 2 === 0 ? -1 : 1);
+  return {
+    ...state,
+    x: state.x + side * FORMATION_SPACING,
+    z: state.z - index * 6,
+  };
 };
 
 export const createServerClock = () => {
@@ -28,7 +36,7 @@ export const createServerClock = () => {
       offset = serverAt - (sentAt + latency);
     },
     now() {
-      return Date.now() + offset;
+      return Math.round(Date.now() + offset);
     },
   };
 };

@@ -143,10 +143,9 @@ const AngleReadout = ({ title, color, rows }) => (
 export const DiagnosticsPage = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const lastSentRef = useRef(0);
   const flapRef = useRef(new FlapDetector());
   const aircraftRef = useRef(createAircraftState());
-  const { isConnected, sendPose } = useGameHub();
+  const { isConnected } = useGameHub();
   const [flapHud, setFlapHud] = useState({
     throttle: 0,
     flapsPerSec: 0,
@@ -157,19 +156,6 @@ export const DiagnosticsPage = () => {
   const { status, error, pose, startCamera, stopCamera } = usePoseCamera({
     videoRef,
     canvasRef,
-    onPose: (nextPose) => {
-      const now = performance.now();
-      if (now - lastSentRef.current < 100) {
-        return;
-      }
-      lastSentRef.current = now;
-      sendPose({
-        head: nextPose.head,
-        body: nextPose.body,
-        leftArm: nextPose.leftArm,
-        rightArm: nextPose.rightArm,
-      });
-    },
     onFrame: (overlay) => {
       flapRef.current.update(overlay?.landmarks, performance.now(), overlay?.pose);
     },

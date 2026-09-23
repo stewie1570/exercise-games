@@ -1,5 +1,6 @@
 import { createAircraftState } from "../physics";
 import {
+  FORMATION_SPACING,
   adoptPlaneSnapshot,
   createRemotePilot,
   createServerClock,
@@ -12,7 +13,11 @@ import {
 test("pilots spawn apart and keep a stable color", () => {
   const first = spawnAircraft(0);
   const second = spawnAircraft(1);
-  expect(second.x - first.x).toBe(18);
+  expect(second.x - first.x).toBe(FORMATION_SPACING);
+  expect(second.z).toBeLessThan(first.z);
+  const cameraZ = first.z + 42;
+  const angle = Math.atan2(Math.abs(second.x - first.x), cameraZ - second.z);
+  expect(angle).toBeLessThan((40 * Math.PI) / 180);
   expect(pilotTint(0)).toEqual(pilotTint(8));
   expect(pilotTint(1).body).not.toBe(pilotTint(0).body);
 });
@@ -49,4 +54,6 @@ test("the server clock estimates offset from a round trip", () => {
   const clock = createServerClock();
   clock.note(1_000, 1_200, 5_000);
   expect(clock.now() - Date.now()).toBeCloseTo(3900, -2);
+  clock.note(1_000, 1_001, 5_000);
+  expect(Number.isInteger(clock.now())).toBe(true);
 });

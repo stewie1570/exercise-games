@@ -4,7 +4,7 @@ import { vi } from "vitest";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 
 vi.mock("../hooks/useGameHub", () => ({
-  useGameHub: () => ({ isConnected: true, connectionId: "abc", sendPose: vi.fn() }),
+  useGameHub: () => ({ isConnected: true, connectionId: "abc" }),
 }));
 
 vi.mock("../hooks/usePoseCamera", () => ({

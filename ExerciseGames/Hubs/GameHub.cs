@@ -9,30 +9,9 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace ExerciseGames.Hubs
 {
-    public class PoseSnapshot
-    {
-        public HeadPose Head { get; set; }
-        public ArmPose LeftArm { get; set; }
-        public ArmPose RightArm { get; set; }
-    }
-
-    public class HeadPose
-    {
-        public double? TiltDeg { get; set; }
-        public double? TurnDeg { get; set; }
-        public double? PitchDeg { get; set; }
-    }
-
-    public class ArmPose
-    {
-        public double? UpperArmDeg { get; set; }
-        public double? ElbowDeg { get; set; }
-        public double? ForearmDeg { get; set; }
-    }
-
     public class PlaneStateDto
     {
-        public long T { get; set; }
+        public double T { get; set; }
         public double X { get; set; }
         public double Z { get; set; }
         public double Altitude { get; set; }
@@ -48,7 +27,7 @@ namespace ExerciseGames.Hubs
     public class PinHitDto
     {
         public string HitId { get; set; }
-        public long T { get; set; }
+        public double T { get; set; }
         public double Dt { get; set; }
         public PlaneStateDto Plane { get; set; }
     }
@@ -79,15 +58,6 @@ namespace ExerciseGames.Hubs
         public Task<long> Clock()
         {
             return Task.FromResult(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        }
-
-        public Task Pose(PoseSnapshot pose)
-        {
-            return Clients.Others.SendAsync("pose", new
-            {
-                connectionId = Context.ConnectionId,
-                pose
-            });
         }
 
         public async Task<RoomSessionDto> HostRoom()
