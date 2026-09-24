@@ -2,9 +2,36 @@ const RAMP_SECONDS = 1.25;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export const arrowControlsEnabled = (env = import.meta.env) => {
-  const value = String(env.VITE_ARROW_CONTROLS ?? "").toLowerCase();
-  return value === "1" || value === "true";
+const readFlag = (value) => {
+  const text = String(value ?? "").toLowerCase();
+  return text === "1" || text === "true";
+};
+
+let runtimeFlag = null;
+
+export const arrowControlsEnabled = (env) => {
+  if (env) {
+    return readFlag(env.VITE_ARROW_CONTROLS);
+  }
+  if (runtimeFlag != null) {
+    return runtimeFlag;
+  }
+  return readFlag(import.meta.env.VITE_ARROW_CONTROLS);
+};
+
+export const loadArrowControls = async () => {
+  try {
+    const response = await fetch("/api/features");
+    if (response.ok) {
+      const body = await response.json();
+      runtimeFlag = Boolean(body.arrowControls);
+      return runtimeFlag;
+    }
+  } catch {
+    // The build-time flag still covers local Vite.
+  }
+  runtimeFlag = readFlag(import.meta.env.VITE_ARROW_CONTROLS);
+  return runtimeFlag;
 };
 
 export const stepArrowControls = (state, held, dt) => {
