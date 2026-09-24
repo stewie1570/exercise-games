@@ -1,6 +1,15 @@
 import { PIN_RESET_DELAY } from "./dimensions";
-import { countFallen, pinFallen, resetPin, stepPins } from "./physics";
-import { createScorecard, currentFrameIndex, isFrameClosed, isGameOver, recordRoll } from "./score";
+import { capturePin, countFallen, pinFallen, resetPin, restorePin, stepPins } from "./physics";
+import {
+  createScorecard,
+  currentFrameIndex,
+  frameTotals,
+  gameTotal,
+  isFrameClosed,
+  isGameOver,
+  recordRoll,
+  rollMarks,
+} from "./score";
 
 export const createBowlingGame = (pins) => ({
   pins,
@@ -81,3 +90,37 @@ const sweepFallen = (game) => {
 };
 
 export const pinsInPlay = (game) => game.pins.filter((pin) => !pin.inactive);
+
+export const bowlingHud = (game) => ({
+  frames: game.card.frames,
+  marks: rollMarks(game.card.frames),
+  totals: frameTotals(game.card.frames),
+  total: gameTotal(game.card.frames),
+  frame: currentFrameIndex(game.card.frames) + 1,
+  settling: game.phase === "settling",
+  resetIn: game.settleIn,
+  gameOver: isGameOver(game.card.frames) || Boolean(game.startNext),
+  delay: PIN_RESET_DELAY,
+});
+
+export const captureBowling = (game) => ({
+  pins: game.pins.map(capturePin),
+  card: { frames: game.card.frames.map((rolls) => [...rolls]) },
+  phase: game.phase,
+  settleIn: game.settleIn,
+  fallenAtBallStart: game.fallenAtBallStart,
+  startNext: Boolean(game.startNext),
+});
+
+export const restoreBowling = (game, snap) => {
+  snap.pins.forEach((pin, index) => {
+    if (game.pins[index]) {
+      restorePin(game.pins[index], pin);
+    }
+  });
+  game.card = { frames: snap.card.frames.map((rolls) => [...rolls]) };
+  game.phase = snap.phase;
+  game.settleIn = snap.settleIn;
+  game.fallenAtBallStart = snap.fallenAtBallStart;
+  game.startNext = Boolean(snap.startNext);
+};

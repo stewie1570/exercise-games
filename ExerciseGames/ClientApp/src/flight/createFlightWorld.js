@@ -34,7 +34,7 @@ const colors = {
   prop: 0x111827,
 };
 
-export const createFlightWorld = (container) => {
+export const createFlightWorld = (container, { localTint } = {}) => {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b7e0);
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
@@ -69,8 +69,10 @@ export const createFlightWorld = (container) => {
     scene.add(chunk);
   });
 
-  const aircraft = createUltralight();
+  const aircraft = createUltralight(localTint);
   scene.add(aircraft);
+  const remoteCraft = new Map();
+  const retiredCraft = [];
 
   const bowling = createBowling();
   scene.add(bowling.group);
@@ -91,18 +93,34 @@ export const createFlightWorld = (container) => {
     renderer.setSize(width, height, false);
   };
 
-  const update = (state, dt) => {
-    aircraft.position.set(state.x, state.altitude, state.z);
-    aircraft.rotation.order = "YXZ";
-    aircraft.rotation.y = -state.heading;
-    const airborne = state.altitude > FLIGHT.minAltitude + 0.05;
-    aircraft.rotation.z = airborne ? -(state.turn || 0) * 0.45 : 0;
-    aircraft.rotation.x = airborne
-      ? THREE.MathUtils.clamp(-(state.climbRate || 0) * 0.012, -0.18, 0.22)
-      : 0;
-    const spinning = state.moving || (state.throttle || 0) > 0.02;
-    const propSpeed = spinning ? 10 + (state.speed || 0) * 0.4 + (state.throttle || 0) * 32 : 0;
-    aircraft.userData.prop.rotation.z += propSpeed * dt;
+  const syncRemotes = (remotes, dt) => {
+    const seen = new Set();
+    remotes.forEach((remote) => {
+      if (!remote?.state) {
+        return;
+      }
+      seen.add(remote.id);
+      let craft = remoteCraft.get(remote.id);
+      if (!craft) {
+        craft = createUltralight(remote.tint);
+        scene.add(craft);
+        remoteCraft.set(remote.id, craft);
+      }
+      poseCraft(craft, remote.state, dt);
+    });
+    for (const [id, craft] of remoteCraft) {
+      if (seen.has(id)) {
+        continue;
+      }
+      scene.remove(craft);
+      remoteCraft.delete(id);
+      retiredCraft.push(craft);
+    }
+  };
+
+  const update = (state, dt, frame = {}) => {
+    poseCraft(aircraft, state, dt);
+    syncRemotes(frame.remotes ?? [], dt);
 
     aircraft.updateMatrixWorld();
     camera.position.copy(chaseLocal);
@@ -113,7 +131,13 @@ export const createFlightWorld = (container) => {
     camera.up.copy(cameraUp);
     camera.lookAt(lookAt);
     camera.updateMatrixWorld();
-    const bowlingHud = bowling.update(state, dt);
+    let bowlingHud;
+    if (frame.simulateBowling === false) {
+      bowling.syncMeshes();
+      bowlingHud = frame.bowlingHud ?? bowling.hud();
+    } else {
+      bowlingHud = bowling.update(state, dt);
+    }
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen);
     for (const chunk of chunks) {
@@ -131,6 +155,7 @@ export const createFlightWorld = (container) => {
   };
 
   const dispose = () => {
+    retiredCraft.forEach((craft) => scene.add(craft));
     const disposed = new Set();
     scene.traverse((object) => {
       if (object.geometry && !disposed.has(object.geometry)) {
@@ -152,7 +177,7 @@ export const createFlightWorld = (container) => {
   };
 
   setSize();
-  return { setSize, update, dispose };
+  return { setSize, update, dispose, bowling };
 };
 
 const createGround = () => {
@@ -519,12 +544,27 @@ const createTrees = (add) => {
   });
 };
 
-const createUltralight = () => {
+const poseCraft = (craft, state, dt) => {
+  craft.position.set(state.x, state.altitude, state.z);
+  craft.rotation.order = "YXZ";
+  craft.rotation.y = -state.heading;
+  const airborne = state.altitude > FLIGHT.minAltitude + 0.05;
+  craft.rotation.z = airborne ? -(state.turn || 0) * 0.45 : 0;
+  craft.rotation.x = airborne
+    ? THREE.MathUtils.clamp(-(state.climbRate || 0) * 0.012, -0.18, 0.22)
+    : 0;
+  const spinning = state.moving || (state.throttle || 0) > 0.02;
+  const propSpeed = spinning ? 10 + (state.speed || 0) * 0.4 + (state.throttle || 0) * 32 : 0;
+  craft.userData.prop.rotation.z += propSpeed * dt;
+};
+
+const createUltralight = (tint) => {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({ color: colors.planeBody });
+  group.frustumCulled = false;
+  const bodyMat = new THREE.MeshLambertMaterial({ color: tint?.body ?? colors.planeBody });
   const wingMat = new THREE.MeshLambertMaterial({ color: colors.planeWing });
   const darkMat = new THREE.MeshLambertMaterial({ color: colors.planeAccent });
-  const stripeMat = new THREE.MeshLambertMaterial({ color: colors.planeStripe });
+  const stripeMat = new THREE.MeshLambertMaterial({ color: tint?.stripe ?? colors.planeStripe });
   const propMat = new THREE.MeshLambertMaterial({ color: colors.prop });
   const glassMat = new THREE.MeshLambertMaterial({
     color: 0x7dd3fc,

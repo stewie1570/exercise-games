@@ -49,6 +49,13 @@ export const HomePage = () => (
           over Meadow Airport. Knock down the bowling pins east of the runway to keep score.
         </p>
       </CardLink>
+      <CardLink className="card" to="/together">
+        <h2>Play together</h2>
+        <p>
+          Host a lane or join with a 4-character code. Each pilot flies their own ultralight, and
+          the host keeps the pins and the scoreboard.
+        </p>
+      </CardLink>
       <CardLink className="card" to="/diagnostics">
         <h2>Pose diagnostics</h2>
         <p>

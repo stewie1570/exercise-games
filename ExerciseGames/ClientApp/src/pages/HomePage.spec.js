@@ -12,5 +12,7 @@ test("home page links to the ultralight game and diagnostics", () => {
   expect(screen.getByRole("heading", { name: "Exercise Games" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Ultralight flight/i })).toHaveAttribute("href", "/fly");
   expect(screen.getByText(/bowling pins east of the runway/i)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Play together/i })).toHaveAttribute("href", "/together");
+  expect(screen.getByText(/4-character code/i)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Pose diagnostics/i })).toHaveAttribute("href", "/diagnostics");
 });

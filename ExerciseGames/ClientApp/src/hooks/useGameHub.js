@@ -34,13 +34,5 @@ export const useGameHub = () => {
     },
   });
 
-  const sendPose = (pose) => {
-    if (!connection.current || !isConnected) {
-      return;
-    }
-
-    connection.current.send("Pose", pose);
-  };
-
-  return { isConnected, connectionId, sendPose };
+  return { isConnected, connectionId };
 };
