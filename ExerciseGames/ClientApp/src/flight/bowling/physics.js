@@ -18,7 +18,8 @@ const ROLLING_SPEED2 = 4 * 4;
 const GROUND_SPIN_DAMP = 6;
 const PLANE_RESTITUTION = 0.14;
 const MAX_PLANE_DV = 22;
-const STANDING_DOT = 0.55;
+const FALLEN_TILT = (22 * Math.PI) / 180;
+const STANDING_DOT = Math.cos(FALLEN_TILT);
 const SUBSTEP = 1 / 48;
 const MAX_SUBSTEPS = 1;
 const SLEEP_SPEED2 = 0.5 * 0.5;
@@ -112,12 +113,21 @@ export const planeVelocity = (state) => [
   -Math.cos(state.heading) * (state.speed || 0),
 ];
 
-const yawQuat = (heading, out) => {
-  const half = -heading * 0.5;
-  out[0] = 0;
-  out[1] = Math.sin(half);
-  out[2] = 0;
-  out[3] = Math.cos(half);
+const planeQuat = (state, out) => {
+  const yaw = -(state.heading || 0);
+  const airborne = (state.altitude || 0) > 1.45;
+  const pitch = airborne ? clamp(-(state.climbRate || 0) * 0.012, -0.18, 0.22) : 0;
+  const roll = airborne ? -(state.turn || 0) * 0.45 : 0;
+  const c1 = Math.cos(pitch * 0.5);
+  const c2 = Math.cos(yaw * 0.5);
+  const c3 = Math.cos(roll * 0.5);
+  const s1 = Math.sin(pitch * 0.5);
+  const s2 = Math.sin(yaw * 0.5);
+  const s3 = Math.sin(roll * 0.5);
+  out[0] = s1 * c2 * c3 + c1 * s2 * s3;
+  out[1] = c1 * s2 * c3 - s1 * c2 * s3;
+  out[2] = c1 * c2 * s3 - s1 * s2 * c3;
+  out[3] = c1 * c2 * c3 + s1 * s2 * s3;
   return out;
 };
 
@@ -249,7 +259,7 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
     const heading = state.heading || 0;
     const speed = state.speed || 0;
     const travel = speed * dt;
-    yawQuat(heading, PLANE_Q);
+    planeQuat(state, PLANE_Q);
     ORIGIN[0] = state.x;
     ORIGIN[1] = state.altitude;
     ORIGIN[2] = state.z;
@@ -279,14 +289,14 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
   for (let step = 0; step < steps; step += 1) {
     integrate(pins, h);
     if (planeNear) {
+      const struck = new Set();
       for (let sample = 0; sample < sweepCount; sample += 1) {
         const t = sweepCount === 1 ? 1 : sample / (sweepCount - 1);
         ORIGIN[0] = prevX + (state.x - prevX) * t;
         ORIGIN[1] = prevY + (state.altitude - prevY) * t;
         ORIGIN[2] = prevZ + (state.z - prevZ) * t;
-        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL)) {
+        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL, struck)) {
           hit = true;
-          break;
         }
       }
     }
@@ -482,7 +492,7 @@ const sphereOnPin = (pin, sphere, out) => {
   return out;
 };
 
-const collidePlane = (pins, origin, q, planeVel) => {
+const collidePlane = (pins, origin, q, planeVel, struck) => {
   let hit = false;
   PLANE_Q_INV[0] = -q[0];
   PLANE_Q_INV[1] = -q[1];
@@ -491,7 +501,7 @@ const collidePlane = (pins, origin, q, planeVel) => {
 
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive) {
+    if (pin.inactive || struck.has(pin)) {
       continue;
     }
     const pdx = pin.p[0] - origin[0];
@@ -598,6 +608,7 @@ const collidePlane = (pins, origin, q, planeVel) => {
     pin.p[2] += nz * bestPen;
     writeSpheres(pin);
     knock(pin);
+    struck.add(pin);
     hit = true;
     velocityAt(pin, BEST_CONTACT, TMP);
     const closing =

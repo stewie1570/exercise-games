@@ -3,6 +3,7 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export const FLIGHT = {
   airspeed: 42,
   groundDecel: 14,
+  groundAccel: 20,
   stopSpeed: 0.45,
   maintainThrottle: 0.42,
   maxClimbRate: 11,
@@ -101,8 +102,10 @@ export const stepAircraft = (state, { throttle, turn, flapping }, dt) => {
       climbRate = 0;
       climbCommand = 0;
     }
-    if (!powered && onGround(altitude)) {
+    if (!powered && (grounded || onGround(altitude))) {
       speed = Math.max(0, speed - FLIGHT.groundDecel * dt);
+    } else if (grounded) {
+      speed = Math.min(FLIGHT.airspeed, speed + FLIGHT.groundAccel * dt);
     } else {
       speed = FLIGHT.airspeed;
     }

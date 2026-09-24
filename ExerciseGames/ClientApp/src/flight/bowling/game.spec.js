@@ -22,6 +22,22 @@ test("the first plane hit starts a six second reset timer", () => {
   expect(game.card.frames[0].length).toBe(1);
 });
 
+test("a partially knocked pin scores and is cleared as dead wood", () => {
+  const pins = pinSlots().map((slot) => createPinBody(slot.x, slot.z));
+  const half = (25 * Math.PI) / 360;
+  pins[4].q = [Math.sin(half), 0, 0, Math.cos(half)];
+  const game = createBowlingGame(pins);
+  game.phase = "settling";
+  game.settleIn = 0;
+  stepBowlingGame(game, {
+    state: { x: 0, z: 40, altitude: 10, heading: 0, speed: 0, climbRate: 0 },
+    dt: 0.016,
+  });
+  expect(game.card.frames[0]).toEqual([1]);
+  expect(pins[4].inactive).toBe(true);
+  expect(pins.filter((pin) => pin.inactive).length).toBe(1);
+});
+
 test("fallen pins stay down for the second ball", () => {
   const pins = pinSlots().map((slot) => createPinBody(slot.x, slot.z));
   pins.slice(0, 7).forEach((pin) => {

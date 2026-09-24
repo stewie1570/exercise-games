@@ -44,6 +44,22 @@ test("a fuselage buried in the pin belly still counts as a hit", () => {
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
 });
 
+test("the wing tip knocks a pin the fuselage misses", () => {
+  const pin = createPinBody(5.4, -2);
+  const state = {
+    x: 0,
+    z: -2 + 0.15,
+    altitude: PIN_HEIGHT * 0.32 - 1.62,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+    turn: 0,
+  };
+  const hit = stepPins([pin], { state, dt: 0.016, planeHit: true });
+  expect(hit).toBe(true);
+  expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
+});
+
 test("the wing registers a hit on the pin neck", () => {
   const pin = createPinBody(0, -2);
   const state = {
@@ -104,6 +120,21 @@ test("a kicked pin settles and sleeps within about a second", () => {
   }
   expect(pin.sleeping).toBe(true);
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeLessThan(0.5);
+});
+
+const tiltAboutX = (degrees) => {
+  const half = (degrees * Math.PI) / 360;
+  return [Math.sin(half), 0, 0, Math.cos(half)];
+};
+
+test("a pin leaning past a small tilt counts as fallen", () => {
+  const leaning = createPinBody(0, 0);
+  leaning.q = tiltAboutX(25);
+  const wobble = createPinBody(1, 0);
+  wobble.q = tiltAboutX(8);
+  expect(pinFallen(leaning)).toBe(true);
+  expect(pinFallen(wobble)).toBe(false);
+  expect(countFallen([leaning, wobble])).toBe(1);
 });
 
 test("a tipped pin counts as fallen and reset stands it back up", () => {
