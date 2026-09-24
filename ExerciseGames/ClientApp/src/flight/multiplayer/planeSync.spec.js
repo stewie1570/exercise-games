@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { createAircraftState } from "../physics";
+import { FLIGHT, createAircraftState } from "../physics";
 import {
   FORMATION_SPACING,
   PLANE_BROADCAST_MS,
@@ -118,6 +118,20 @@ test("a hit sends the plane again without waiting out the gap", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("a grounded remote plane speeds up from the broadcast throttle", () => {
+  const pilot = createRemotePilot("other");
+  adoptPlaneSnapshot(pilot, snapshotAircraft({
+    ...createAircraftState(),
+    altitude: FLIGHT.minAltitude,
+    throttle: 0.8,
+    speed: 0,
+    moving: false,
+  }, 1000), 1000);
+  extrapolatePilot(pilot, 0.5);
+  expect(pilot.state.speed).toBeGreaterThan(0);
+  expect(pilot.state.speed).toBeLessThan(42);
 });
 
 test("the server clock estimates offset from a round trip", () => {

@@ -96,6 +96,13 @@ test("right turn flies toward +X, never reversing along the nose", () => {
   expect(next.z).toBeCloseTo(started.z, 5);
 });
 
+test("throttle on the ground speeds up instead of jumping to cruise", () => {
+  const started = { ...createAircraftState(), altitude: FLIGHT.minAltitude, speed: 0 };
+  const rolling = stepAircraft(started, { throttle: 0.8, turn: 0, flapping: true }, 0.5);
+  expect(rolling.speed).toBeCloseTo(FLIGHT.groundAccel * 0.5, 5);
+  expect(rolling.speed).toBeLessThan(FLIGHT.airspeed);
+});
+
 test("touching the ground without throttle rolls to a stop", () => {
   const started = {
     ...createAircraftState(),

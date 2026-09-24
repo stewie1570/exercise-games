@@ -44,7 +44,7 @@ export const pinSlots = (spacing = PIN_SPACING) => {
 };
 
 export const PLANE_HULLS = [
-  { center: [0, 1.62, -0.15], half: [5.6, 0.28, 0.95] },
+  { center: [0, 1.62, -0.15], half: [6.4, 0.55, 1.2] },
   { center: [0, 0.55, -0.15], half: [0.52, 0.52, 1.65] },
   { center: [0, 0.55, -1.52], half: [0.4, 0.4, 0.45] },
   { center: [0, 0.55, -1.78], half: [1.25, 1.25, 0.4] },
