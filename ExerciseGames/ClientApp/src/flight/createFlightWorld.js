@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { CHUNK_SIZE, DRAW_DISTANCE, chunkCenter, chunkIndex, isChunkInRange } from "./chunkCull";
 import { createBowling, pointInAlley } from "./bowling/createBowling";
+import { PLANE_WINGSPAN, WING_CHORD, WING_SHEAR, WING_Y, WING_Z } from "./bowling/dimensions";
 import { FLIGHT } from "./physics";
 
 const GROUND_Y = 0;
@@ -558,6 +559,24 @@ const poseCraft = (craft, state, dt) => {
   craft.userData.prop.rotation.z += propSpeed * dt;
 };
 
+const addSweptPanel = (group, material, { span, thickness, chord, y, z, zOffset = 0 }) => {
+  const half = span / 2;
+  for (const side of [1, -1]) {
+    const geo = new THREE.BoxGeometry(half + 0.02, thickness, chord);
+    geo.translate(side * half / 2, 0, zOffset);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i += 1) {
+      pos.setZ(i, pos.getZ(i) + Math.abs(pos.getX(i)) * WING_SHEAR);
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.set(0, y, z);
+    group.add(mesh);
+  }
+};
+
+const sweptZ = (x, z) => z + Math.abs(x) * WING_SHEAR;
+
 const createUltralight = (tint) => {
   const group = new THREE.Group();
   group.frustumCulled = false;
@@ -594,17 +613,26 @@ const createUltralight = (tint) => {
   boom.position.set(0, 0.58, 2.05);
   group.add(boom);
 
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.12, 1.7), wingMat);
-  wing.position.set(0, 1.62, -0.15);
-  group.add(wing);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(11.25, 0.04, 0.28), stripeMat);
-  stripe.position.set(0, 1.69, 0.35);
-  group.add(stripe);
+  addSweptPanel(group, wingMat, {
+    span: PLANE_WINGSPAN,
+    thickness: 0.12,
+    chord: WING_CHORD,
+    y: WING_Y,
+    z: WING_Z,
+  });
+  addSweptPanel(group, stripeMat, {
+    span: PLANE_WINGSPAN + 0.05,
+    thickness: 0.04,
+    chord: 0.28,
+    y: WING_Y + 0.07,
+    z: WING_Z,
+    zOffset: 0.5,
+  });
 
-  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, 0.15), new THREE.Vector3(2.9, 1.56, 0.2));
-  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, 0.15), new THREE.Vector3(-2.9, 1.56, 0.2));
-  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, -0.35), new THREE.Vector3(2.6, 1.56, -0.45));
-  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, -0.35), new THREE.Vector3(-2.6, 1.56, -0.45));
+  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, 0.15), new THREE.Vector3(2.9, 1.56, sweptZ(2.9, 0.2)));
+  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, 0.15), new THREE.Vector3(-2.9, 1.56, sweptZ(2.9, 0.2)));
+  addStrut(group, darkMat, new THREE.Vector3(0.38, 0.62, -0.35), new THREE.Vector3(2.6, 1.56, sweptZ(2.6, -0.45)));
+  addStrut(group, darkMat, new THREE.Vector3(-0.38, 0.62, -0.35), new THREE.Vector3(-2.6, 1.56, sweptZ(2.6, -0.45)));
 
   const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.15, 0.85), wingMat);
   fin.position.set(0, 1.15, 3.62);

@@ -18,7 +18,9 @@ const ROLLING_SPEED2 = 4 * 4;
 const GROUND_SPIN_DAMP = 6;
 const PLANE_RESTITUTION = 0.14;
 const MAX_PLANE_DV = 22;
-const STANDING_DOT = 0.55;
+// Anything more than a slight lean off vertical counts as knocked over.
+const STANDING_TILT = (8 * Math.PI) / 180;
+const STANDING_DOT = Math.cos(STANDING_TILT);
 const SUBSTEP = 1 / 48;
 const MAX_SUBSTEPS = 1;
 const SLEEP_SPEED2 = 0.5 * 0.5;
@@ -482,6 +484,129 @@ const sphereOnPin = (pin, sphere, out) => {
   return out;
 };
 
+const closestOnSegment = (x0, z0, x1, z1, lx, lz) => {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const len2 = dx * dx + dz * dz;
+  let t = len2 > 1e-12 ? ((lx - x0) * dx + (lz - z0) * dz) / len2 : 0;
+  t = clamp(t, 0, 1);
+  const x = x0 + dx * t;
+  const z = z0 + dz * t;
+  const ddx = x - lx;
+  const ddz = z - lz;
+  return { x, z, d2: ddx * ddx + ddz * ddz };
+};
+
+// Chevron wing: both halves sweep back, so the leading-edge normal points forward and outboard.
+const sweptWingContact = (hull, lx, ly, lz, radius) => {
+  const hx = hull.half[0];
+  const hy = hull.half[1];
+  const hz = hull.half[2];
+  const shear = hull.shear;
+  const ax = Math.abs(lx);
+  const v = lz - ax * shear;
+  const insideXZ = ax <= hx && v >= -hz && v <= hz;
+  const cly = clamp(ly, -hy, hy);
+  let cx = lx;
+  let cz = lz;
+  if (!insideXZ) {
+    const tip = shear * hx;
+    const edges = [
+      [0, -hz, hx, -hz + tip],
+      [0, -hz, -hx, -hz + tip],
+      [0, hz, hx, hz + tip],
+      [0, hz, -hx, hz + tip],
+      [hx, -hz + tip, hx, hz + tip],
+      [-hx, -hz + tip, -hx, hz + tip],
+    ];
+    let best = Infinity;
+    for (let i = 0; i < edges.length; i += 1) {
+      const edge = edges[i];
+      const hit = closestOnSegment(edge[0], edge[1], edge[2], edge[3], lx, lz);
+      if (hit.d2 < best) {
+        best = hit.d2;
+        cx = hit.x;
+        cz = hit.z;
+      }
+    }
+  }
+  const dx = lx - cx;
+  const dy = ly - cly;
+  const dz = lz - cz;
+  const dist2 = dx * dx + dy * dy + dz * dz;
+  if (dist2 > 1e-12) {
+    if (dist2 >= radius * radius) {
+      return null;
+    }
+    const dist = Math.sqrt(dist2);
+    const inv = 1 / dist;
+    return {
+      faceX: dx * inv,
+      faceY: dy * inv,
+      faceZ: dz * inv,
+      penetration: radius - dist,
+      cx,
+      cy: cly,
+      cz,
+      buried: false,
+    };
+  }
+
+  const cos = 1 / Math.sqrt(1 + shear * shear);
+  const sin = shear * (lx >= 0 ? 1 : -1) * cos;
+  const distLE = (v + hz) * cos;
+  const distTE = (hz - v) * cos;
+  const distPosX = hx - lx;
+  const distNegX = lx + hx;
+  const distTop = hy - ly;
+  const distBot = ly + hy;
+  let faceX = sin;
+  let faceY = 0;
+  let faceZ = -cos;
+  let faceDist = distLE;
+  if (distTE < faceDist) {
+    faceDist = distTE;
+    faceX = -sin;
+    faceY = 0;
+    faceZ = cos;
+  }
+  if (distPosX < faceDist) {
+    faceDist = distPosX;
+    faceX = 1;
+    faceY = 0;
+    faceZ = 0;
+  }
+  if (distNegX < faceDist) {
+    faceDist = distNegX;
+    faceX = -1;
+    faceY = 0;
+    faceZ = 0;
+  }
+  if (distTop < faceDist) {
+    faceDist = distTop;
+    faceX = 0;
+    faceY = 1;
+    faceZ = 0;
+  }
+  if (distBot < faceDist) {
+    faceDist = distBot;
+    faceX = 0;
+    faceY = -1;
+    faceZ = 0;
+  }
+  if (faceZ < -0.5 && Math.abs(lx) < 1e-3) {
+    faceX = 0;
+    faceZ = -1;
+  }
+  return {
+    faceX,
+    faceY,
+    faceZ,
+    penetration: radius + faceDist,
+    buried: true,
+  };
+};
+
 const collidePlane = (pins, origin, q, planeVel) => {
   let hit = false;
   PLANE_Q_INV[0] = -q[0];
@@ -520,6 +645,51 @@ const collidePlane = (pins, origin, q, planeVel) => {
         const lx = LOCAL[0] - hull.center[0];
         const ly = LOCAL[1] - hull.center[1];
         const lz = LOCAL[2] - hull.center[2];
+        if (hull.shear) {
+          const hit = sweptWingContact(hull, lx, ly, lz, radius);
+          if (hit) {
+            let faceX = hit.faceX;
+            let faceY = hit.faceY;
+            let faceZ = hit.faceZ;
+            let contactX;
+            let contactY;
+            let contactZ;
+            if (hit.buried) {
+              rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+              faceX = CLOSEST[0];
+              faceY = CLOSEST[1];
+              faceZ = CLOSEST[2];
+              contactX = SPHERE[0] - faceX * radius;
+              contactY = SPHERE[1] - faceY * radius;
+              contactZ = SPHERE[2] - faceZ * radius;
+            } else {
+              rotateInto(
+                q,
+                hit.cx + hull.center[0],
+                hit.cy + hull.center[1],
+                hit.cz + hull.center[2],
+                CLOSEST
+              );
+              contactX = CLOSEST[0] + origin[0];
+              contactY = CLOSEST[1] + origin[1];
+              contactZ = CLOSEST[2] + origin[2];
+              rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+              faceX = CLOSEST[0];
+              faceY = CLOSEST[1];
+              faceZ = CLOSEST[2];
+            }
+            if (hit.penetration > bestPen) {
+              bestPen = hit.penetration;
+              nx = faceX;
+              ny = faceY;
+              nz = faceZ;
+              BEST_CONTACT[0] = contactX;
+              BEST_CONTACT[1] = contactY;
+              BEST_CONTACT[2] = contactZ;
+            }
+          }
+          continue;
+        }
         const cx = clamp(lx, -hull.half[0], hull.half[0]);
         const cy = clamp(ly, -hull.half[1], hull.half[1]);
         const cz = clamp(lz, -hull.half[2], hull.half[2]);

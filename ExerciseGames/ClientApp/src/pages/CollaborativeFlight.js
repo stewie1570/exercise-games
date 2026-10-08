@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { createFlightWorld } from "../flight/createFlightWorld";
+import { arrowControlsEnabled, createArrowControls } from "../flight/arrowControls";
 import { FlapDetector } from "../flight/flapThrottle";
 import {
   adoptPlaneSnapshot,
@@ -171,6 +172,9 @@ export const CollaborativeFlight = ({ session }) => {
     canvasRef,
     autoStart: true,
     onFrame: (overlay) => {
+      if (arrowControlsEnabled()) {
+        return;
+      }
       const throttle = flapRef.current.update(
         overlay?.landmarks,
         performance.now(),
@@ -212,6 +216,7 @@ export const CollaborativeFlight = ({ session }) => {
     let last = performance.now();
     let lastHud = 0;
     let lastPins = 0;
+    const arrows = arrowControlsEnabled() ? createArrowControls() : null;
     let announced = "";
     let frameId = 0;
 
@@ -253,11 +258,15 @@ export const CollaborativeFlight = ({ session }) => {
       const dt = Math.min(0.05, (nowMs - last) / 1000);
       last = nowMs;
       const live = sessionRef.current;
-      flapRef.current.tick(nowMs);
       const controls = controlsRef.current;
-      controls.throttle = flapRef.current.throttle;
-      controls.flapsPerSec = flapRef.current.flapsPerSec;
-      controls.flapping = flapRef.current.throttle > 0;
+      if (arrows) {
+        Object.assign(controls, arrows.step(dt));
+      } else {
+        flapRef.current.tick(nowMs);
+        controls.throttle = flapRef.current.throttle;
+        controls.flapsPerSec = flapRef.current.flapsPerSec;
+        controls.flapping = flapRef.current.throttle > 0;
+      }
       aircraftRef.current = stepAircraft(aircraftRef.current, controls, dt);
       const at = live.now();
       const game = world.bowling.game;
@@ -355,6 +364,7 @@ export const CollaborativeFlight = ({ session }) => {
     frameId = requestAnimationFrame(loop);
 
     return () => {
+      arrows?.dispose();
       planes.stop();
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
