@@ -191,7 +191,7 @@ namespace ExerciseGames.Hubs
 
         public Task PinState(JsonElement state)
         {
-            if (!TryGetRoom(out var room) || room.HostConnectionId != Context.ConnectionId)
+            if (!TryGetRoom(out var room))
             {
                 return Task.CompletedTask;
             }

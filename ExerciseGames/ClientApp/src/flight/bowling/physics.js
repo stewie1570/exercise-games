@@ -143,6 +143,7 @@ export const capturePin = (pin) => ({
   sleeping: Boolean(pin.sleeping),
   still: pin.still || 0,
   hitLock: pin.hitLock || 0,
+  owner: pin.owner || null,
 });
 
 export const restorePin = (pin, data) => {
@@ -163,6 +164,7 @@ export const restorePin = (pin, data) => {
   pin.sleeping = Boolean(data.sleeping);
   pin.still = data.still || 0;
   pin.hitLock = data.hitLock || 0;
+  pin.owner = data.owner || null;
   pin.dirty = true;
   writeSpheres(pin);
 };
@@ -181,6 +183,7 @@ export const createPinBody = (x, z) => {
     still: 0,
     dirty: true,
     hitLock: 0,
+    owner: null,
   };
   writeSpheres(pin);
   return pin;
@@ -204,6 +207,7 @@ export const resetPin = (pin) => {
   pin.still = 0;
   pin.dirty = true;
   pin.hitLock = 0;
+  pin.owner = null;
   writeSpheres(pin);
 };
 
@@ -223,7 +227,14 @@ const segmentNearPin = (ax, ay, az, bx, by, bz, pin) => {
   return dx * dx + dy * dy + dz * dz < PLANE_RANGE2;
 };
 
-export const stepPins = (pins, { state, dt, planeHit }) => {
+export const stepPins = (pins, {
+  state,
+  dt,
+  planeHit,
+  authority = null,
+  simulateUnowned = true,
+  coastOwner = null,
+}) => {
   const steps = Math.max(1, Math.min(MAX_SUBSTEPS, Math.ceil(dt / SUBSTEP)));
   const h = dt / steps;
   let hit = false;
@@ -247,7 +258,23 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
   let prevZ = 0;
   let sweepCount = 1;
   let planeNear = false;
-  if (planeHit && state) {
+  const claimOwner = coastOwner || authority;
+  const lockOwner = Boolean(coastOwner);
+  const usePlane = Boolean(planeHit && state && !coastOwner);
+  const simulates = (pin) => {
+    if (coastOwner) {
+      return pin.owner === coastOwner;
+    }
+    if (!authority) {
+      return true;
+    }
+    if (pin.owner === authority) {
+      return true;
+    }
+    return !pin.owner && simulateUnowned;
+  };
+
+  if (usePlane) {
     const heading = state.heading || 0;
     const speed = state.speed || 0;
     const travel = speed * dt;
@@ -279,35 +306,37 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
   }
 
   for (let step = 0; step < steps; step += 1) {
-    integrate(pins, h);
+    integrate(pins, h, simulates);
     if (planeNear) {
       for (let sample = 0; sample < sweepCount; sample += 1) {
         const t = sweepCount === 1 ? 1 : sample / (sweepCount - 1);
         ORIGIN[0] = prevX + (state.x - prevX) * t;
         ORIGIN[1] = prevY + (state.altitude - prevY) * t;
         ORIGIN[2] = prevZ + (state.z - prevZ) * t;
-        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL)) {
+        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL, claimOwner)) {
           hit = true;
           break;
         }
       }
     }
-    if (moving || hit) {
-      collidePins(pins);
-      collideGround(pins, h);
-      trySleep(pins, h);
+    if (moving || hit || coastOwner) {
+      if (!coastOwner || moving) {
+        collidePins(pins, { authority: claimOwner, simulateUnowned, lockOwner });
+      }
+      collideGround(pins, h, simulates);
+      trySleep(pins, h, simulates);
     }
   }
   return hit;
 };
 
-const integrate = (pins, dt) => {
+const integrate = (pins, dt, allow) => {
   const lin = Math.exp(-LINEAR_DAMP * dt);
   const ang = Math.exp(-ANGULAR_DAMP * dt);
   const half = 0.5 * dt;
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     pin.v[1] -= GRAVITY * dt;
@@ -364,7 +393,7 @@ const velocityAt = (pin, at, out) => {
   return out;
 };
 
-const collidePins = (pins) => {
+const collidePins = (pins, { authority = null, simulateUnowned = true, lockOwner = false } = {}) => {
   for (let i = 0; i < pins.length; i += 1) {
     const a = pins[i];
     if (a.inactive) {
@@ -374,6 +403,18 @@ const collidePins = (pins) => {
       const b = pins[j];
       if (b.inactive || (a.sleeping && b.sleeping)) {
         continue;
+      }
+      const ownA = Boolean(authority) && a.owner === authority;
+      const ownB = Boolean(authority) && b.owner === authority;
+      if (authority) {
+        const restingPair = !a.owner && !b.owner;
+        if (lockOwner) {
+          if (!ownA || !ownB) {
+            continue;
+          }
+        } else if (!(ownA || ownB || (simulateUnowned && restingPair))) {
+          continue;
+        }
       }
       const dx = a.p[0] - b.p[0];
       const dy = a.p[1] - b.p[1];
@@ -392,6 +433,10 @@ const collidePins = (pins) => {
           const min = PIN_SPHERES[sa].radius + PIN_SPHERES[sb].radius;
           if (dist2 >= min * min || dist2 < 1e-12) {
             continue;
+          }
+          if (authority && !lockOwner && (ownA || ownB)) {
+            a.owner = authority;
+            b.owner = authority;
           }
           const dist = Math.sqrt(dist2);
           const inv = 1 / dist;
@@ -427,10 +472,10 @@ const collidePins = (pins) => {
   }
 };
 
-const collideGround = (pins, dt) => {
+const collideGround = (pins, dt, allow) => {
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     let touched = false;
@@ -607,7 +652,7 @@ const sweptWingContact = (hull, lx, ly, lz, radius) => {
   };
 };
 
-const collidePlane = (pins, origin, q, planeVel) => {
+const collidePlane = (pins, origin, q, planeVel, claimOwner) => {
   let hit = false;
   PLANE_Q_INV[0] = -q[0];
   PLANE_Q_INV[1] = -q[1];
@@ -768,6 +813,9 @@ const collidePlane = (pins, origin, q, planeVel) => {
     pin.p[2] += nz * bestPen;
     writeSpheres(pin);
     knock(pin);
+    if (claimOwner) {
+      pin.owner = claimOwner;
+    }
     hit = true;
     velocityAt(pin, BEST_CONTACT, TMP);
     const closing =
@@ -786,10 +834,10 @@ const collidePlane = (pins, origin, q, planeVel) => {
   return hit;
 };
 
-const trySleep = (pins, dt) => {
+const trySleep = (pins, dt, allow) => {
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     if (pin.hitLock > 0) {

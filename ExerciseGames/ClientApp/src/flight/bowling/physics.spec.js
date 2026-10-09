@@ -107,6 +107,27 @@ test("a fast sweep still knocks a pin the prop passes through", () => {
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
 });
 
+test("the pilot who strikes a pin owns that pin", () => {
+  const pin = createPinBody(0, -2);
+  const state = {
+    x: 0,
+    z: -2 + 0.15,
+    altitude: PIN_HEIGHT * 0.32 - 0.55,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+  };
+  const hit = stepPins([pin], {
+    state,
+    dt: 0.016,
+    planeHit: true,
+    authority: "pilot",
+    simulateUnowned: false,
+  });
+  expect(hit).toBe(true);
+  expect(pin.owner).toBe("pilot");
+});
+
 test("a moving pin knocks into a neighbor", () => {
   const a = createPinBody(0, 0);
   const b = createPinBody(PIN_SPACING * 0.92, 0);
