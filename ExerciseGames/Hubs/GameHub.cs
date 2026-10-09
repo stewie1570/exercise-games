@@ -82,6 +82,7 @@ namespace ExerciseGames.Hubs
             CodeByConnection[Context.ConnectionId] = room.Code;
             await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room.Code));
             var roster = Roster(room);
+            Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} hosted room {room.Code}");
             await Clients.Group(GroupName(room.Code)).SendAsync("roster", roster);
             return Session(roster);
         }
@@ -111,6 +112,7 @@ namespace ExerciseGames.Hubs
             CodeByConnection[Context.ConnectionId] = room.Code;
             await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room.Code));
             var roster = Roster(room);
+            Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} joined room {room.Code} ({roster.Players.Length} players)");
             await Clients.Group(GroupName(room.Code)).SendAsync("roster", roster);
             return Session(roster);
         }
@@ -145,12 +147,16 @@ namespace ExerciseGames.Hubs
             if (hostLeft || room.Players.Count == 0)
             {
                 RoomsByCode.TryRemove(code, out _);
+                Console.WriteLine(hostLeft
+                    ? $"Multiplayer disconnect: host {Context.ConnectionId} left room {code}; room closed"
+                    : $"Multiplayer disconnect: {Context.ConnectionId} left room {code}; room closed");
                 if (dropped != null)
                 {
                     foreach (var player in dropped)
                     {
                         CodeByConnection.TryRemove(player, out _);
                         await Groups.RemoveFromGroupAsync(player, GroupName(code));
+                        Console.WriteLine($"Multiplayer disconnect: {player} removed from room {code}");
                     }
                 }
 
@@ -158,6 +164,7 @@ namespace ExerciseGames.Hubs
                 return;
             }
 
+            Console.WriteLine($"Multiplayer disconnect: {Context.ConnectionId} left room {code} ({room.Players.Count} remaining)");
             await Clients.Group(GroupName(code)).SendAsync("roster", Roster(room));
         }
 

@@ -30,10 +30,13 @@ export const useRoomSession = () => {
         setConnectionId(message?.connectionId ?? null);
       });
       hub.on("roster", (roster) => {
-        setRoom(readRoom(roster));
+        const next = readRoom(roster);
+        console.log(`Multiplayer roster ${next.code}: ${next.players.length} connected`);
+        setRoom(next);
         setError(null);
       });
       hub.on("roomClosed", () => {
+        console.log("Multiplayer room closed");
         setRoom(null);
         setError("The host ended the game.");
       });
@@ -77,6 +80,7 @@ export const useRoomSession = () => {
       }
       setConnectionId(session.connectionId ?? connectionId);
       setRoom(readRoom(session));
+      console.log(`Multiplayer connect: hosted ${session.code}`);
       return session;
     } catch {
       setError("Could not start a game.");
@@ -94,6 +98,7 @@ export const useRoomSession = () => {
       }
       setConnectionId(session.connectionId ?? connectionId);
       setRoom(readRoom(session));
+      console.log(`Multiplayer connect: joined ${session.code}`);
       return session;
     } catch {
       setError("Could not join that game.");
@@ -107,6 +112,7 @@ export const useRoomSession = () => {
     } catch {
       // The lobby is local either way.
     }
+    console.log("Multiplayer disconnect: left room");
     setRoom(null);
     setError(null);
   };
