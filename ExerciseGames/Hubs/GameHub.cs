@@ -1,8 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
@@ -24,31 +20,9 @@ namespace ExerciseGames.Hubs
         public bool Moving { get; set; }
     }
 
-    public class PinHitDto
-    {
-        public string HitId { get; set; }
-        public double T { get; set; }
-        public double Dt { get; set; }
-        public PlaneStateDto Plane { get; set; }
-    }
-
-    public class RosterDto
-    {
-        public string Code { get; set; }
-        public string HostConnectionId { get; set; }
-        public string[] Players { get; set; }
-    }
-
-    public class RoomSessionDto : RosterDto
-    {
-        public string ConnectionId { get; set; }
-    }
-
     public class GameHub : Hub
     {
         private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        private static readonly ConcurrentDictionary<string, Room> RoomsByCode = new();
-        private static readonly ConcurrentDictionary<string, string> CodeByConnection = new();
 
         public Task Hello()
         {
@@ -60,187 +34,61 @@ namespace ExerciseGames.Hubs
             return Task.FromResult(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
-        public async Task<RoomSessionDto> HostRoom()
-        {
-            await LeaveRoom();
-            Room room = null;
-            for (var attempt = 0; attempt < 8 && room == null; attempt += 1)
-            {
-                var code = NewCode();
-                var created = new Room(code, Context.ConnectionId);
-                if (RoomsByCode.TryAdd(code, created))
-                {
-                    room = created;
-                }
-            }
-
-            if (room == null)
-            {
-                return null;
-            }
-
-            CodeByConnection[Context.ConnectionId] = room.Code;
-            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room.Code));
-            var roster = Roster(room);
-            Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} hosted room {room.Code}");
-            await Clients.Group(GroupName(room.Code)).SendAsync("roster", roster);
-            return Session(roster);
-        }
-
-        public async Task<RoomSessionDto> JoinRoom(string code)
+        public async Task<string> JoinRoom(string code)
         {
             code = NormalizeCode(code);
-            if (code == null || !RoomsByCode.TryGetValue(code, out var room))
+            if (code == null)
             {
                 return null;
             }
 
-            await LeaveRoom();
-            if (!RoomsByCode.TryGetValue(code, out room))
-            {
-                return null;
-            }
-
-            lock (room.Gate)
-            {
-                if (!room.Players.Contains(Context.ConnectionId))
-                {
-                    room.Players.Add(Context.ConnectionId);
-                }
-            }
-
-            CodeByConnection[Context.ConnectionId] = room.Code;
-            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room.Code));
-            var roster = Roster(room);
-            Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} joined room {room.Code} ({roster.Players.Length} players)");
-            await Clients.Group(GroupName(room.Code)).SendAsync("roster", roster);
-            return Session(roster);
+            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(code));
+            Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} joined room {code}");
+            return code;
         }
 
-        public async Task LeaveRoom()
+        public async Task LeaveRoom(string code)
         {
-            if (!CodeByConnection.TryRemove(Context.ConnectionId, out var code))
+            code = NormalizeCode(code);
+            if (code == null)
             {
                 return;
-            }
-
-            if (!RoomsByCode.TryGetValue(code, out var room))
-            {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(code));
-                return;
-            }
-
-            List<string> dropped = null;
-            var hostLeft = false;
-            lock (room.Gate)
-            {
-                room.Players.Remove(Context.ConnectionId);
-                hostLeft = room.HostConnectionId == Context.ConnectionId;
-                if (hostLeft)
-                {
-                    dropped = room.Players.ToList();
-                    room.Players.Clear();
-                }
             }
 
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(code));
-            if (hostLeft || room.Players.Count == 0)
-            {
-                RoomsByCode.TryRemove(code, out _);
-                Console.WriteLine(hostLeft
-                    ? $"Multiplayer disconnect: host {Context.ConnectionId} left room {code}; room closed"
-                    : $"Multiplayer disconnect: {Context.ConnectionId} left room {code}; room closed");
-                if (dropped != null)
-                {
-                    foreach (var player in dropped)
-                    {
-                        CodeByConnection.TryRemove(player, out _);
-                        await Groups.RemoveFromGroupAsync(player, GroupName(code));
-                        Console.WriteLine($"Multiplayer disconnect: {player} removed from room {code}");
-                    }
-                }
-
-                await Clients.Group(GroupName(code)).SendAsync("roomClosed");
-                return;
-            }
-
-            Console.WriteLine($"Multiplayer disconnect: {Context.ConnectionId} left room {code} ({room.Players.Count} remaining)");
-            await Clients.Group(GroupName(code)).SendAsync("roster", Roster(room));
+            Console.WriteLine($"Multiplayer disconnect: {Context.ConnectionId} left room {code}");
         }
 
-        public Task Plane(PlaneStateDto state)
+        public Task Plane(string code, PlaneStateDto state)
         {
-            if (!TryGetRoom(out var room))
+            code = NormalizeCode(code);
+            if (code == null)
             {
                 return Task.CompletedTask;
             }
 
-            return Clients.OthersInGroup(GroupName(room.Code)).SendAsync("plane", new
+            return Clients.OthersInGroup(GroupName(code)).SendAsync("plane", new
             {
                 connectionId = Context.ConnectionId,
                 state
             });
         }
 
-        public Task PinHit(PinHitDto hit)
+        public Task PinState(string code, JsonElement state)
         {
-            if (!TryGetRoom(out var room) || room.HostConnectionId == Context.ConnectionId)
+            code = NormalizeCode(code);
+            if (code == null)
             {
                 return Task.CompletedTask;
             }
 
-            return Clients.Client(room.HostConnectionId).SendAsync("pinHit", new
-            {
-                connectionId = Context.ConnectionId,
-                hit
-            });
+            return Clients.OthersInGroup(GroupName(code)).SendAsync("pinState", state);
         }
 
-        public Task PinState(JsonElement state)
+        public override Task OnDisconnectedAsync(Exception exception)
         {
-            if (!TryGetRoom(out var room))
-            {
-                return Task.CompletedTask;
-            }
-
-            return Clients.OthersInGroup(GroupName(room.Code)).SendAsync("pinState", state);
-        }
-
-        public override async Task OnDisconnectedAsync(Exception exception)
-        {
-            await LeaveRoom();
-            await base.OnDisconnectedAsync(exception);
-        }
-
-        private RoomSessionDto Session(RosterDto roster)
-        {
-            return new RoomSessionDto
-            {
-                Code = roster.Code,
-                HostConnectionId = roster.HostConnectionId,
-                Players = roster.Players,
-                ConnectionId = Context.ConnectionId,
-            };
-        }
-
-        private bool TryGetRoom(out Room room)
-        {
-            room = null;
-            return CodeByConnection.TryGetValue(Context.ConnectionId, out var code)
-                && RoomsByCode.TryGetValue(code, out room);
-        }
-
-        private static RosterDto Roster(Room room)
-        {
-            lock (room.Gate)
-            {
-                return new RosterDto
-                {
-                    Code = room.Code,
-                    HostConnectionId = room.HostConnectionId,
-                    Players = room.Players.ToArray(),
-                };
-            }
+            Console.WriteLine($"Multiplayer disconnect: {Context.ConnectionId}");
+            return base.OnDisconnectedAsync(exception);
         }
 
         private static string GroupName(string code) => $"together-{code}";
@@ -267,32 +115,6 @@ namespace ExerciseGames.Hubs
             }
 
             return trimmed;
-        }
-
-        private static string NewCode()
-        {
-            Span<char> chars = stackalloc char[4];
-            for (var i = 0; i < chars.Length; i += 1)
-            {
-                chars[i] = Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)];
-            }
-
-            return new string(chars);
-        }
-
-        private sealed class Room
-        {
-            public Room(string code, string hostConnectionId)
-            {
-                Code = code;
-                HostConnectionId = hostConnectionId;
-                Players.Add(hostConnectionId);
-            }
-
-            public string Code { get; }
-            public string HostConnectionId { get; }
-            public List<string> Players { get; } = new();
-            public object Gate { get; } = new();
         }
     }
 }

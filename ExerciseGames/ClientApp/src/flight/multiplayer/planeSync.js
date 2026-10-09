@@ -75,6 +75,42 @@ export const PILOT_TINTS = [
 
 export const pilotTint = (slot) => PILOT_TINTS[Math.abs(slot) % PILOT_TINTS.length];
 
+export const pilotTintForId = (id) => {
+  const text = String(id ?? "");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return pilotTint(hash);
+};
+
+export const PILOT_STALE_MS = 1000;
+
+export const rememberPilot = (heard, id, at) => {
+  if (!id) {
+    return;
+  }
+  heard.set(id, at);
+};
+
+export const livingPilots = (heard, at, selfId, staleMs = PILOT_STALE_MS) => {
+  for (const [id, when] of [...heard]) {
+    if (at - when > staleMs) {
+      heard.delete(id);
+    }
+  }
+  const ids = [];
+  if (selfId) {
+    ids.push(selfId);
+  }
+  for (const id of heard.keys()) {
+    if (id !== selfId) {
+      ids.push(id);
+    }
+  }
+  return ids;
+};
+
 export const FORMATION_SPACING = 16;
 
 export const spawnAircraft = (slot) => {

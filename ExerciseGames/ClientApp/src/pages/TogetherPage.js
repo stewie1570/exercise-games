@@ -2,9 +2,8 @@ import React, { useState } from "react";
 import styled from "styled-components";
 import { AppNav } from "../components/AppNav";
 import { useRoomSession } from "../hooks/useRoomSession";
+import { ROOM_CODE_ALPHABET } from "../flight/multiplayer/roomCode";
 import { CollaborativeFlight } from "./CollaborativeFlight";
-
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const Layout = styled.div`
   display: grid;
@@ -22,7 +21,7 @@ const Code = styled.p`
 const normalizeCode = (value) => value
   .toUpperCase()
   .split("")
-  .filter((character) => CODE_ALPHABET.includes(character))
+  .filter((character) => ROOM_CODE_ALPHABET.includes(character))
   .join("")
   .slice(0, 4);
 

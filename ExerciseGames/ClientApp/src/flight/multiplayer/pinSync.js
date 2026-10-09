@@ -41,6 +41,7 @@ export const buildPinBroadcast = ({
   reason,
   plane = null,
   score = null,
+  players = null,
 }) => ({
   revision,
   t,
@@ -51,6 +52,7 @@ export const buildPinBroadcast = ({
   reason,
   plane,
   score,
+  players,
 });
 
 export const acceptPinRevision = (seen, payload) => {
