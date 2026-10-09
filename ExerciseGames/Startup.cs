@@ -1,6 +1,8 @@
+using System;
 using ExerciseGames.Hubs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
 using Microsoft.Extensions.Configuration;
@@ -40,6 +42,23 @@ namespace ExerciseGames
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory)
         {
+            app.Use(async (context, next) =>
+            {
+                await next();
+                if (!HttpMethods.IsGet(context.Request.Method))
+                {
+                    return;
+                }
+
+                var accept = context.Request.Headers.Accept.ToString();
+                if (accept.IndexOf("text/html", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return;
+                }
+
+                Console.WriteLine(
+                    $"Page {context.Request.Method} {context.Request.Path}{context.Request.QueryString} -> {context.Response.StatusCode}");
+            });
             app.UseResponseCompression();
             app.UseRouting();
             app.UseCustomExceptionHandler(env, loggerFactory);
@@ -72,6 +91,7 @@ namespace ExerciseGames
 
             app.UseEndpoints(endpoints =>
             {
+                endpoints.MapControllers();
                 endpoints.MapControllerRoute(
                     name: "default",
                     pattern: "{controller}/{action=Index}/{id?}");

@@ -19,20 +19,33 @@ export const createBowlingGame = (pins) => ({
   fallenAtBallStart: 0,
 });
 
-export const stepBowlingGame = (game, { state, dt }) => {
+const startSettling = (game) => {
+  if (game.phase !== "ready") {
+    return;
+  }
+  if (game.startNext) {
+    game.card = createScorecard();
+    game.startNext = false;
+  }
+  game.phase = "settling";
+  game.settleIn = PIN_RESET_DELAY;
+};
+
+export const noteRemoteHit = (game) => {
+  startSettling(game);
+};
+
+export const stepBowlingGame = (game, { state, dt, authority = null, simulateUnowned = true }) => {
   const hit = stepPins(game.pins, {
     state,
     dt,
     planeHit: true,
+    authority,
+    simulateUnowned,
   });
 
-  if (hit && game.phase === "ready") {
-    if (game.startNext) {
-      game.card = createScorecard();
-      game.startNext = false;
-    }
-    game.phase = "settling";
-    game.settleIn = PIN_RESET_DELAY;
+  if (hit) {
+    startSettling(game);
   }
 
   if (game.phase === "settling") {
@@ -84,6 +97,7 @@ const sweepFallen = (game) => {
       return;
     }
     pin.inactive = true;
+    pin.owner = null;
     pin.v = [0, 0, 0];
     pin.w = [0, 0, 0];
   });

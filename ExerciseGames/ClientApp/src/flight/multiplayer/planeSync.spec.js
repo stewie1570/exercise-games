@@ -2,13 +2,18 @@ import { vi } from "vitest";
 import { createAircraftState } from "../physics";
 import {
   FORMATION_SPACING,
+  PILOT_STALE_MS,
+  PILOT_TINTS,
   PLANE_BROADCAST_MS,
   adoptPlaneSnapshot,
   createPlaneCadence,
   createRemotePilot,
   createServerClock,
   extrapolatePilot,
+  livingPilots,
   pilotTint,
+  pilotTintForId,
+  rememberPilot,
   snapshotAircraft,
   spawnAircraft,
 } from "./planeSync";
@@ -20,6 +25,17 @@ test("pilots spawn apart and keep a stable color", () => {
   expect(second.z).toBeLessThan(first.z);
   expect(pilotTint(0)).toEqual(pilotTint(8));
   expect(pilotTint(1).body).not.toBe(pilotTint(0).body);
+});
+
+test("a connection id keeps the same color, and a quiet pilot leaves the host list", () => {
+  expect(pilotTintForId("pilot-a")).toEqual(pilotTintForId("pilot-a"));
+  expect(PILOT_TINTS).toContainEqual(pilotTintForId("pilot-a"));
+
+  const heard = new Map();
+  rememberPilot(heard, "guest", 1000);
+  expect(livingPilots(heard, 1000, "host")).toEqual(["host", "guest"]);
+  expect(livingPilots(heard, 1000 + PILOT_STALE_MS + 1, "host")).toEqual(["host"]);
+  expect(heard.has("guest")).toBe(false);
 });
 
 test("a remote plane keeps flying on the last controls until the next snapshot", () => {

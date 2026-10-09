@@ -16,8 +16,8 @@ const session = vi.hoisted(() => ({
   joinRoom: vi.fn(),
   leaveRoom: vi.fn(),
   sendPlane: vi.fn(),
-  sendPinHit: vi.fn(),
   sendPinState: vi.fn(),
+  setPlayers: vi.fn(),
 }));
 
 vi.mock("../hooks/useRoomSession", () => ({
@@ -89,7 +89,7 @@ test("the lobby hosts or joins with a 4-character code", async () => {
 });
 
 test("a joined room shows the code and the shared lane", () => {
-  session.room = { code: "K7QP", hostConnectionId: "me", players: ["me", "them"] };
+  session.room = { code: "K7QP", players: ["me", "them"] };
   session.isHost = true;
   render(
     <MemoryRouter>

@@ -1,9 +1,16 @@
-export const PLANE_WINGSPAN = 11.2;
+export const PLANE_WINGSPAN = 9.6;
+// Leading edge sweeps back 30° from straight, so a wing hit throws pins forward and outward.
+export const WING_SWEEP = Math.PI / 6;
+export const WING_SHEAR = Math.tan(WING_SWEEP);
+export const WING_CHORD = 1.7;
+export const WING_Y = 1.62;
+export const WING_Z = -0.15;
 
 // USBC pin: 4.766" belly, 15" height, 12" centers, 2.03" base, ~2.55" head.
+// Centers are a little tighter than 12" so the rack sits closer together.
 const BELLY_IN = 4.766;
 const HEIGHT_IN = 15;
-const SPACING_IN = 12;
+const SPACING_IN = 10.2;
 const BASE_IN = 2.03;
 const HEAD_IN = 2.55;
 
@@ -44,7 +51,11 @@ export const pinSlots = (spacing = PIN_SPACING) => {
 };
 
 export const PLANE_HULLS = [
-  { center: [0, 1.62, -0.15], half: [5.6, 0.28, 0.95] },
+  {
+    center: [0, WING_Y, WING_Z],
+    half: [PLANE_WINGSPAN / 2, 0.28, 0.95],
+    shear: WING_SHEAR,
+  },
   { center: [0, 0.55, -0.15], half: [0.52, 0.52, 1.65] },
   { center: [0, 0.55, -1.52], half: [0.4, 0.4, 0.45] },
   { center: [0, 0.55, -1.78], half: [1.25, 1.25, 0.4] },

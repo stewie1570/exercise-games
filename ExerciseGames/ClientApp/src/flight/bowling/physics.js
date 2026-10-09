@@ -18,7 +18,9 @@ const ROLLING_SPEED2 = 4 * 4;
 const GROUND_SPIN_DAMP = 6;
 const PLANE_RESTITUTION = 0.14;
 const MAX_PLANE_DV = 22;
-const STANDING_DOT = 0.55;
+// Anything more than a slight lean off vertical counts as knocked over.
+const STANDING_TILT = (8 * Math.PI) / 180;
+const STANDING_DOT = Math.cos(STANDING_TILT);
 const SUBSTEP = 1 / 48;
 const MAX_SUBSTEPS = 1;
 const SLEEP_SPEED2 = 0.5 * 0.5;
@@ -141,6 +143,7 @@ export const capturePin = (pin) => ({
   sleeping: Boolean(pin.sleeping),
   still: pin.still || 0,
   hitLock: pin.hitLock || 0,
+  owner: pin.owner || null,
 });
 
 export const restorePin = (pin, data) => {
@@ -161,6 +164,7 @@ export const restorePin = (pin, data) => {
   pin.sleeping = Boolean(data.sleeping);
   pin.still = data.still || 0;
   pin.hitLock = data.hitLock || 0;
+  pin.owner = data.owner || null;
   pin.dirty = true;
   writeSpheres(pin);
 };
@@ -179,6 +183,7 @@ export const createPinBody = (x, z) => {
     still: 0,
     dirty: true,
     hitLock: 0,
+    owner: null,
   };
   writeSpheres(pin);
   return pin;
@@ -202,6 +207,7 @@ export const resetPin = (pin) => {
   pin.still = 0;
   pin.dirty = true;
   pin.hitLock = 0;
+  pin.owner = null;
   writeSpheres(pin);
 };
 
@@ -221,7 +227,14 @@ const segmentNearPin = (ax, ay, az, bx, by, bz, pin) => {
   return dx * dx + dy * dy + dz * dz < PLANE_RANGE2;
 };
 
-export const stepPins = (pins, { state, dt, planeHit }) => {
+export const stepPins = (pins, {
+  state,
+  dt,
+  planeHit,
+  authority = null,
+  simulateUnowned = true,
+  coastOwner = null,
+}) => {
   const steps = Math.max(1, Math.min(MAX_SUBSTEPS, Math.ceil(dt / SUBSTEP)));
   const h = dt / steps;
   let hit = false;
@@ -245,7 +258,23 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
   let prevZ = 0;
   let sweepCount = 1;
   let planeNear = false;
-  if (planeHit && state) {
+  const claimOwner = coastOwner || authority;
+  const lockOwner = Boolean(coastOwner);
+  const usePlane = Boolean(planeHit && state && !coastOwner);
+  const simulates = (pin) => {
+    if (coastOwner) {
+      return pin.owner === coastOwner;
+    }
+    if (!authority) {
+      return true;
+    }
+    if (pin.owner === authority) {
+      return true;
+    }
+    return !pin.owner && simulateUnowned;
+  };
+
+  if (usePlane) {
     const heading = state.heading || 0;
     const speed = state.speed || 0;
     const travel = speed * dt;
@@ -277,35 +306,37 @@ export const stepPins = (pins, { state, dt, planeHit }) => {
   }
 
   for (let step = 0; step < steps; step += 1) {
-    integrate(pins, h);
+    integrate(pins, h, simulates);
     if (planeNear) {
       for (let sample = 0; sample < sweepCount; sample += 1) {
         const t = sweepCount === 1 ? 1 : sample / (sweepCount - 1);
         ORIGIN[0] = prevX + (state.x - prevX) * t;
         ORIGIN[1] = prevY + (state.altitude - prevY) * t;
         ORIGIN[2] = prevZ + (state.z - prevZ) * t;
-        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL)) {
+        if (collidePlane(pins, ORIGIN, PLANE_Q, PLANE_VEL, claimOwner)) {
           hit = true;
           break;
         }
       }
     }
-    if (moving || hit) {
-      collidePins(pins);
-      collideGround(pins, h);
-      trySleep(pins, h);
+    if (moving || hit || coastOwner) {
+      if (!coastOwner || moving) {
+        collidePins(pins, { authority: claimOwner, simulateUnowned, lockOwner });
+      }
+      collideGround(pins, h, simulates);
+      trySleep(pins, h, simulates);
     }
   }
   return hit;
 };
 
-const integrate = (pins, dt) => {
+const integrate = (pins, dt, allow) => {
   const lin = Math.exp(-LINEAR_DAMP * dt);
   const ang = Math.exp(-ANGULAR_DAMP * dt);
   const half = 0.5 * dt;
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     pin.v[1] -= GRAVITY * dt;
@@ -362,7 +393,7 @@ const velocityAt = (pin, at, out) => {
   return out;
 };
 
-const collidePins = (pins) => {
+const collidePins = (pins, { authority = null, simulateUnowned = true, lockOwner = false } = {}) => {
   for (let i = 0; i < pins.length; i += 1) {
     const a = pins[i];
     if (a.inactive) {
@@ -372,6 +403,18 @@ const collidePins = (pins) => {
       const b = pins[j];
       if (b.inactive || (a.sleeping && b.sleeping)) {
         continue;
+      }
+      const ownA = Boolean(authority) && a.owner === authority;
+      const ownB = Boolean(authority) && b.owner === authority;
+      if (authority) {
+        const restingPair = !a.owner && !b.owner;
+        if (lockOwner) {
+          if (!ownA || !ownB) {
+            continue;
+          }
+        } else if (!(ownA || ownB || (simulateUnowned && restingPair))) {
+          continue;
+        }
       }
       const dx = a.p[0] - b.p[0];
       const dy = a.p[1] - b.p[1];
@@ -390,6 +433,10 @@ const collidePins = (pins) => {
           const min = PIN_SPHERES[sa].radius + PIN_SPHERES[sb].radius;
           if (dist2 >= min * min || dist2 < 1e-12) {
             continue;
+          }
+          if (authority && !lockOwner && (ownA || ownB)) {
+            a.owner = authority;
+            b.owner = authority;
           }
           const dist = Math.sqrt(dist2);
           const inv = 1 / dist;
@@ -425,10 +472,10 @@ const collidePins = (pins) => {
   }
 };
 
-const collideGround = (pins, dt) => {
+const collideGround = (pins, dt, allow) => {
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     let touched = false;
@@ -482,7 +529,130 @@ const sphereOnPin = (pin, sphere, out) => {
   return out;
 };
 
-const collidePlane = (pins, origin, q, planeVel) => {
+const closestOnSegment = (x0, z0, x1, z1, lx, lz) => {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const len2 = dx * dx + dz * dz;
+  let t = len2 > 1e-12 ? ((lx - x0) * dx + (lz - z0) * dz) / len2 : 0;
+  t = clamp(t, 0, 1);
+  const x = x0 + dx * t;
+  const z = z0 + dz * t;
+  const ddx = x - lx;
+  const ddz = z - lz;
+  return { x, z, d2: ddx * ddx + ddz * ddz };
+};
+
+// Chevron wing: both halves sweep back, so the leading-edge normal points forward and outboard.
+const sweptWingContact = (hull, lx, ly, lz, radius) => {
+  const hx = hull.half[0];
+  const hy = hull.half[1];
+  const hz = hull.half[2];
+  const shear = hull.shear;
+  const ax = Math.abs(lx);
+  const v = lz - ax * shear;
+  const insideXZ = ax <= hx && v >= -hz && v <= hz;
+  const cly = clamp(ly, -hy, hy);
+  let cx = lx;
+  let cz = lz;
+  if (!insideXZ) {
+    const tip = shear * hx;
+    const edges = [
+      [0, -hz, hx, -hz + tip],
+      [0, -hz, -hx, -hz + tip],
+      [0, hz, hx, hz + tip],
+      [0, hz, -hx, hz + tip],
+      [hx, -hz + tip, hx, hz + tip],
+      [-hx, -hz + tip, -hx, hz + tip],
+    ];
+    let best = Infinity;
+    for (let i = 0; i < edges.length; i += 1) {
+      const edge = edges[i];
+      const hit = closestOnSegment(edge[0], edge[1], edge[2], edge[3], lx, lz);
+      if (hit.d2 < best) {
+        best = hit.d2;
+        cx = hit.x;
+        cz = hit.z;
+      }
+    }
+  }
+  const dx = lx - cx;
+  const dy = ly - cly;
+  const dz = lz - cz;
+  const dist2 = dx * dx + dy * dy + dz * dz;
+  if (dist2 > 1e-12) {
+    if (dist2 >= radius * radius) {
+      return null;
+    }
+    const dist = Math.sqrt(dist2);
+    const inv = 1 / dist;
+    return {
+      faceX: dx * inv,
+      faceY: dy * inv,
+      faceZ: dz * inv,
+      penetration: radius - dist,
+      cx,
+      cy: cly,
+      cz,
+      buried: false,
+    };
+  }
+
+  const cos = 1 / Math.sqrt(1 + shear * shear);
+  const sin = shear * (lx >= 0 ? 1 : -1) * cos;
+  const distLE = (v + hz) * cos;
+  const distTE = (hz - v) * cos;
+  const distPosX = hx - lx;
+  const distNegX = lx + hx;
+  const distTop = hy - ly;
+  const distBot = ly + hy;
+  let faceX = sin;
+  let faceY = 0;
+  let faceZ = -cos;
+  let faceDist = distLE;
+  if (distTE < faceDist) {
+    faceDist = distTE;
+    faceX = -sin;
+    faceY = 0;
+    faceZ = cos;
+  }
+  if (distPosX < faceDist) {
+    faceDist = distPosX;
+    faceX = 1;
+    faceY = 0;
+    faceZ = 0;
+  }
+  if (distNegX < faceDist) {
+    faceDist = distNegX;
+    faceX = -1;
+    faceY = 0;
+    faceZ = 0;
+  }
+  if (distTop < faceDist) {
+    faceDist = distTop;
+    faceX = 0;
+    faceY = 1;
+    faceZ = 0;
+  }
+  if (distBot < faceDist) {
+    faceDist = distBot;
+    faceX = 0;
+    faceY = -1;
+    faceZ = 0;
+  }
+  if (faceZ < -0.5 && Math.abs(lx) < 1e-3) {
+    faceX = 0;
+    faceZ = -1;
+  }
+  return {
+    faceX,
+    faceY,
+    faceZ,
+    penetration: radius + faceDist,
+    buried: true,
+  };
+};
+
+const collidePlane = (pins, origin, q, planeVel, claimOwner) => {
   let hit = false;
   PLANE_Q_INV[0] = -q[0];
   PLANE_Q_INV[1] = -q[1];
@@ -520,6 +690,51 @@ const collidePlane = (pins, origin, q, planeVel) => {
         const lx = LOCAL[0] - hull.center[0];
         const ly = LOCAL[1] - hull.center[1];
         const lz = LOCAL[2] - hull.center[2];
+        if (hull.shear) {
+          const hit = sweptWingContact(hull, lx, ly, lz, radius);
+          if (hit) {
+            let faceX = hit.faceX;
+            let faceY = hit.faceY;
+            let faceZ = hit.faceZ;
+            let contactX;
+            let contactY;
+            let contactZ;
+            if (hit.buried) {
+              rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+              faceX = CLOSEST[0];
+              faceY = CLOSEST[1];
+              faceZ = CLOSEST[2];
+              contactX = SPHERE[0] - faceX * radius;
+              contactY = SPHERE[1] - faceY * radius;
+              contactZ = SPHERE[2] - faceZ * radius;
+            } else {
+              rotateInto(
+                q,
+                hit.cx + hull.center[0],
+                hit.cy + hull.center[1],
+                hit.cz + hull.center[2],
+                CLOSEST
+              );
+              contactX = CLOSEST[0] + origin[0];
+              contactY = CLOSEST[1] + origin[1];
+              contactZ = CLOSEST[2] + origin[2];
+              rotateInto(q, faceX, faceY, faceZ, CLOSEST);
+              faceX = CLOSEST[0];
+              faceY = CLOSEST[1];
+              faceZ = CLOSEST[2];
+            }
+            if (hit.penetration > bestPen) {
+              bestPen = hit.penetration;
+              nx = faceX;
+              ny = faceY;
+              nz = faceZ;
+              BEST_CONTACT[0] = contactX;
+              BEST_CONTACT[1] = contactY;
+              BEST_CONTACT[2] = contactZ;
+            }
+          }
+          continue;
+        }
         const cx = clamp(lx, -hull.half[0], hull.half[0]);
         const cy = clamp(ly, -hull.half[1], hull.half[1]);
         const cz = clamp(lz, -hull.half[2], hull.half[2]);
@@ -598,6 +813,9 @@ const collidePlane = (pins, origin, q, planeVel) => {
     pin.p[2] += nz * bestPen;
     writeSpheres(pin);
     knock(pin);
+    if (claimOwner) {
+      pin.owner = claimOwner;
+    }
     hit = true;
     velocityAt(pin, BEST_CONTACT, TMP);
     const closing =
@@ -616,10 +834,10 @@ const collidePlane = (pins, origin, q, planeVel) => {
   return hit;
 };
 
-const trySleep = (pins, dt) => {
+const trySleep = (pins, dt, allow) => {
   for (let i = 0; i < pins.length; i += 1) {
     const pin = pins[i];
-    if (pin.inactive || pin.sleeping) {
+    if (pin.inactive || pin.sleeping || (allow && !allow(pin))) {
       continue;
     }
     if (pin.hitLock > 0) {

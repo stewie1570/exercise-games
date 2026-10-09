@@ -4,6 +4,7 @@ import { AppNav } from "../components/AppNav";
 import { createFlightWorld } from "../flight/createFlightWorld";
 import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { FlapDetector } from "../flight/flapThrottle";
+import { arrowControlsEnabled, createArrowControls } from "../flight/arrowControls";
 import { createAircraftState, FLIGHT, stepAircraft } from "../flight/physics";
 import { steeringFromTilt } from "../flight/tiltSteering";
 import { useFullscreen } from "../hooks/useFullscreen";
@@ -150,6 +151,9 @@ export const FlightPage = () => {
     canvasRef,
     autoStart: true,
     onFrame: (overlay) => {
+      if (arrowControlsEnabled()) {
+        return;
+      }
       const throttle = flapRef.current.update(
         overlay?.landmarks,
         performance.now(),
@@ -185,14 +189,19 @@ export const FlightPage = () => {
     let last = performance.now();
     let lastHud = 0;
     let frameId = 0;
+    const arrows = arrowControlsEnabled() ? createArrowControls() : null;
     const loop = (now) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      flapRef.current.tick(now);
       const controls = controlsRef.current;
-      controls.throttle = flapRef.current.throttle;
-      controls.flapsPerSec = flapRef.current.flapsPerSec;
-      controls.flapping = flapRef.current.throttle > 0;
+      if (arrows) {
+        Object.assign(controls, arrows.step(dt));
+      } else {
+        flapRef.current.tick(now);
+        controls.throttle = flapRef.current.throttle;
+        controls.flapsPerSec = flapRef.current.flapsPerSec;
+        controls.flapping = flapRef.current.throttle > 0;
+      }
       aircraftRef.current = stepAircraft(aircraftRef.current, controls, dt);
       const bowling = world.update(aircraftRef.current, dt);
       if (now - lastHud > 100) {
@@ -212,6 +221,7 @@ export const FlightPage = () => {
     frameId = requestAnimationFrame(loop);
 
     return () => {
+      arrows?.dispose();
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);

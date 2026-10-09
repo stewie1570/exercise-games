@@ -2,24 +2,31 @@ import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { createFlightWorld } from "../flight/createFlightWorld";
+import { arrowControlsEnabled, createArrowControls } from "../flight/arrowControls";
 import { FlapDetector } from "../flight/flapThrottle";
 import {
   adoptPlaneSnapshot,
   createPlaneCadence,
   createRemotePilot,
   extrapolatePilot,
-  pilotTint,
+  livingPilots,
+  PILOT_STALE_MS,
+  pilotTintForId,
+  rememberPilot,
   snapshotAircraft,
   spawnAircraft,
 } from "../flight/multiplayer/planeSync";
 import {
+  acceptPinRevision,
   applyPinBroadcast,
   buildPinBroadcast,
-  createPinHistory,
-  predictLocalPins,
-  shouldApplyPinState,
+  coastForeignPins,
+  MOTION_BROADCAST_MS,
+  releaseSleepingPins,
+  remoteHitNeedsScore,
+  scoreRemoteHit,
 } from "../flight/multiplayer/pinSync";
-import { stepBowlingGame } from "../flight/bowling/game";
+import { bowlingHud as scoreHud, stepBowlingGame } from "../flight/bowling/game";
 import { stepPins } from "../flight/bowling/physics";
 import { FLIGHT, stepAircraft } from "../flight/physics";
 import { steeringFromTilt } from "../flight/tiltSteering";
@@ -145,13 +152,14 @@ export const CollaborativeFlight = ({ session }) => {
   const controlsRef = useRef({ throttle: 0, turn: 0, flapsPerSec: 0 });
   const sessionRef = useRef(session);
   const pilotsRef = useRef(new Map());
-  const historyRef = useRef(createPinHistory());
-  const pendingHitsRef = useRef([]);
-  const lastRevisionRef = useRef(0);
+  const seenRevisionRef = useRef(new Map());
   const revisionRef = useRef(0);
   const hostScoreRef = useRef(null);
   const contactRef = useRef(false);
   const publishPinsRef = useRef(() => {});
+  const heardRef = useRef(new Map());
+  const rosterRef = useRef([]);
+  const hostRosterRef = useRef(null);
   sessionRef.current = session;
 
   const { isFullscreen, toggle: toggleFullscreen, supported: fullscreenSupported } =
@@ -171,6 +179,9 @@ export const CollaborativeFlight = ({ session }) => {
     canvasRef,
     autoStart: true,
     onFrame: (overlay) => {
+      if (arrowControlsEnabled()) {
+        return;
+      }
       const throttle = flapRef.current.update(
         overlay?.landmarks,
         performance.now(),
@@ -196,11 +207,9 @@ export const CollaborativeFlight = ({ session }) => {
     }
 
     const current = sessionRef.current;
-    const players = current.room?.players ?? [];
-    const slot = Math.max(0, players.indexOf(current.connectionId));
-    const aircraft = spawnAircraft(slot);
+    const aircraft = spawnAircraft(0);
     aircraftRef.current = aircraft;
-    const world = createFlightWorld(host, { localTint: pilotTint(slot) });
+    const world = createFlightWorld(host, { localTint: pilotTintForId(current.connectionId) });
     worldRef.current = world;
     world.update(aircraft, 0.016, { simulateBowling: false });
 
@@ -212,6 +221,7 @@ export const CollaborativeFlight = ({ session }) => {
     let last = performance.now();
     let lastHud = 0;
     let lastPins = 0;
+    const arrows = arrowControlsEnabled() ? createArrowControls() : null;
     let announced = "";
     let frameId = 0;
 
@@ -229,22 +239,35 @@ export const CollaborativeFlight = ({ session }) => {
     const publishPins = (reason) => {
       const live = sessionRef.current;
       const game = worldRef.current?.bowling?.game;
-      if (!live.isHost || !game) {
+      if (!game || !live.connectionId) {
         return;
       }
       const at = live.now();
-      if (reason === "cadence" && at - lastPins < PIN_BROADCAST_MS) {
-        return;
+      const released = releaseSleepingPins(game.pins, live.connectionId);
+      const ownsMotion = game.pins.some((pin) => pin.owner === live.connectionId);
+      if (reason === "cadence") {
+        if (!live.isHost && !ownsMotion && released.length === 0) {
+          return;
+        }
+        const gap = ownsMotion ? MOTION_BROADCAST_MS : PIN_BROADCAST_MS;
+        if (released.length === 0 && at - lastPins < gap) {
+          return;
+        }
       }
       lastPins = at;
       revisionRef.current += 1;
+      const authoritative = live.isHost && (reason === "score" || reason === "join");
       live.sendPinState(buildPinBroadcast({
         revision: revisionRef.current,
         t: at,
+        from: live.connectionId,
         game,
-        appliedHitIds: historyRef.current.appliedHitIds,
+        released,
+        authoritative,
         reason,
-        plane: snapshotAircraft(aircraftRef.current, at),
+        plane: live.isHost ? snapshotAircraft(aircraftRef.current, at) : null,
+        score: live.isHost ? scoreHud(game) : null,
+        players: live.isHost ? [...rosterRef.current] : null,
       }));
     };
     publishPinsRef.current = publishPins;
@@ -253,52 +276,61 @@ export const CollaborativeFlight = ({ session }) => {
       const dt = Math.min(0.05, (nowMs - last) / 1000);
       last = nowMs;
       const live = sessionRef.current;
-      flapRef.current.tick(nowMs);
       const controls = controlsRef.current;
-      controls.throttle = flapRef.current.throttle;
-      controls.flapsPerSec = flapRef.current.flapsPerSec;
-      controls.flapping = flapRef.current.throttle > 0;
+      if (arrows) {
+        Object.assign(controls, arrows.step(dt));
+      } else {
+        flapRef.current.tick(nowMs);
+        controls.throttle = flapRef.current.throttle;
+        controls.flapsPerSec = flapRef.current.flapsPerSec;
+        controls.flapping = flapRef.current.throttle > 0;
+      }
       aircraftRef.current = stepAircraft(aircraftRef.current, controls, dt);
       const at = live.now();
       const game = world.bowling.game;
 
-      const players = live.room?.players ?? [];
-      const playerKey = players.join("|");
-      for (const id of pilotsRef.current.keys()) {
-        if (!players.includes(id) || id === live.connectionId) {
-          pilotsRef.current.delete(id);
+      if (live.isHost) {
+        const roster = livingPilots(heardRef.current, at, live.connectionId);
+        rosterRef.current = roster;
+        const playerKey = roster.join("|");
+        if (playerKey !== announced) {
+          announced = playerKey;
+          live.setPlayers?.(roster);
+          console.log(`Multiplayer roster ${live.room?.code ?? ""}: ${roster.length} connected`);
+          publishPins("join");
         }
       }
+      const allowed = live.isHost ? new Set(rosterRef.current) : null;
+      const hostRoster = hostRosterRef.current;
       const remotes = [];
-      players.forEach((id, index) => {
-        if (id === live.connectionId) {
-          return;
-        }
-        let pilot = pilotsRef.current.get(id);
-        if (!pilot) {
-          pilot = createRemotePilot(id);
-          adoptPlaneSnapshot(pilot, snapshotAircraft(spawnAircraft(index), at), at);
-          pilotsRef.current.set(id, pilot);
+      for (const [id, pilot] of pilotsRef.current) {
+        const stale = at - (pilot.heardAt ?? 0) > PILOT_STALE_MS;
+        const droppedByHost = Boolean(hostRoster)
+          && !hostRoster.ids.includes(id)
+          && hostRoster.at > (pilot.seenAt ?? 0);
+        if (id === live.connectionId || (live.isHost ? !allowed.has(id) : stale || droppedByHost)) {
+          pilotsRef.current.delete(id);
+          continue;
         }
         if (!pilot.state) {
-          return;
+          continue;
         }
         extrapolatePilot(pilot, dt);
-        remotes.push({ id, state: pilot.state, tint: pilotTint(index) });
-      });
+        remotes.push({ id, state: pilot.state, tint: pilotTintForId(id) });
+      }
 
+      const authority = live.connectionId;
       let bowlingHud = hostScoreRef.current;
       if (live.isHost) {
-        historyRef.current.record({
-          t: at,
-          dt,
-          host: aircraftRef.current,
-          game,
-        });
         const beforePhase = game.phase;
         const beforeCard = game.card;
         const beforeNext = Boolean(game.startNext);
-        const hit = stepBowlingGame(game, { state: aircraftRef.current, dt });
+        const hit = stepBowlingGame(game, {
+          state: aircraftRef.current,
+          dt,
+          authority,
+          simulateUnowned: true,
+        });
         const changed = hit
           || game.phase !== beforePhase
           || game.card !== beforeCard
@@ -313,25 +345,27 @@ export const CollaborativeFlight = ({ session }) => {
             publishPins("score");
           }
         }
-        if (playerKey !== announced) {
-          announced = playerKey;
-          publishPins("join");
-        }
-        publishPins("cadence");
         bowlingHud = world.bowling.hud();
-      } else {
-        const hit = predictLocalPins(game.pins, aircraftRef.current, dt);
+      } else if (authority) {
+        const hit = stepPins(game.pins, {
+          state: aircraftRef.current,
+          dt,
+          planeHit: true,
+          authority,
+          simulateUnowned: false,
+        });
         if (hit && !contactRef.current) {
           contactRef.current = true;
-          const hitId = `${live.connectionId}:${at}`;
-          pendingHitsRef.current = [...pendingHitsRef.current, hitId];
-          const plane = snapshotAircraft(aircraftRef.current, at);
           planes.requestImmediate();
-          live.sendPinHit({ hitId, t: at, dt, plane });
+          publishPins("hit");
         } else if (!hit) {
           contactRef.current = false;
         }
       }
+      if (authority) {
+        coastForeignPins(game.pins, authority, dt);
+      }
+      publishPins("cadence");
 
       const shown = world.update(aircraftRef.current, dt, {
         simulateBowling: false,
@@ -355,6 +389,7 @@ export const CollaborativeFlight = ({ session }) => {
     frameId = requestAnimationFrame(loop);
 
     return () => {
+      arrows?.dispose();
       planes.stop();
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
@@ -373,55 +408,56 @@ export const CollaborativeFlight = ({ session }) => {
         if (!id || id === live.connectionId) {
           return;
         }
+        const at = live.now();
+        rememberPilot(heardRef.current, id, at);
         let pilot = pilotsRef.current.get(id);
         if (!pilot) {
           pilot = createRemotePilot(id);
+          pilot.seenAt = at;
           pilotsRef.current.set(id, pilot);
         }
-        adoptPlaneSnapshot(pilot, message.state, live.now());
-      },
-      onPinHit: (message) => {
-        const live = sessionRef.current;
-        const game = worldRef.current?.bowling?.game;
-        if (!live.isHost || !game || !message?.hit?.plane) {
-          return;
-        }
-        historyRef.current.applyHit(game, message.hit, {
-          now: live.now(),
-          host: aircraftRef.current,
-        });
-        publishPinsRef.current("hit");
+        pilot.heardAt = at;
+        adoptPlaneSnapshot(pilot, message.state, at);
       },
       onPinState: (payload) => {
         const live = sessionRef.current;
         const game = worldRef.current?.bowling?.game;
-        if (live.isHost || !game) {
+        if (!game || !acceptPinRevision(seenRevisionRef.current, payload)) {
           return;
         }
-        if (!shouldApplyPinState({
-          payload,
-          lastRevision: lastRevisionRef.current,
-          pendingHitIds: pendingHitsRef.current,
-        })) {
-          return;
+        applyPinBroadcast(game, payload, { localId: live.connectionId });
+        if (live.isHost && remoteHitNeedsScore(payload, live.connectionId)) {
+          scoreRemoteHit(game);
         }
-        applyPinBroadcast(game, payload);
-        if (payload.plane && live.room?.hostConnectionId) {
-          const hostId = live.room.hostConnectionId;
+        if (!live.isHost && payload.score) {
+          hostScoreRef.current = payload.score;
+          if (Array.isArray(payload.players)) {
+            hostRosterRef.current = { ids: payload.players, at: payload.t ?? 0 };
+            live.setPlayers?.(payload.players);
+          }
+        }
+        if (!live.isHost && payload.plane && payload.from) {
+          const hostId = payload.from;
+          const at = live.now();
+          rememberPilot(heardRef.current, hostId, at);
           let pilot = pilotsRef.current.get(hostId);
           if (!pilot) {
             pilot = createRemotePilot(hostId);
+            pilot.seenAt = at;
             pilotsRef.current.set(hostId, pilot);
           }
-          adoptPlaneSnapshot(pilot, payload.plane, live.now());
+          pilot.heardAt = at;
+          adoptPlaneSnapshot(pilot, payload.plane, at);
         }
         const late = Math.min(0.5, Math.max(0, (live.now() - payload.t) / 1000));
-        if (late > 0) {
-          stepPins(game.pins, { state: null, dt: late, planeHit: false });
+        if (late > 0 && payload.from) {
+          stepPins(game.pins, {
+            state: null,
+            dt: late,
+            planeHit: false,
+            coastOwner: payload.from,
+          });
         }
-        lastRevisionRef.current = payload.revision;
-        pendingHitsRef.current = [];
-        hostScoreRef.current = payload.score;
       },
     });
   }, [session]);

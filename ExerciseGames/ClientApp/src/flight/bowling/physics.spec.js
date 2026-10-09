@@ -1,4 +1,4 @@
-import { PIN_BELLY, PIN_HEIGHT, PIN_SPACING, PLANE_WINGSPAN, pinSlots } from "./dimensions";
+import { PIN_BELLY, PIN_HEIGHT, PIN_SPACING, PLANE_HULLS, PLANE_WINGSPAN, pinSlots } from "./dimensions";
 import { countFallen, createPinBody, pinFallen, resetPin, stepPins } from "./physics";
 
 test("pin size is one third of the ultralight wingspan", () => {
@@ -44,6 +44,32 @@ test("a fuselage buried in the pin belly still counts as a hit", () => {
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
 });
 
+test("a swept wing throws a pin forward and outward", () => {
+  const wing = PLANE_HULLS.find((hull) => hull.shear);
+  const sweep = Math.atan(wing.shear);
+  const footX = 4;
+  const gap = 0.45;
+  const leZ = wing.center[2] - wing.half[2] + wing.shear * footX;
+  for (const side of [1, -1]) {
+    const pinX = side * (footX + Math.sin(sweep) * gap);
+    const pinZ = 0;
+    const pin = createPinBody(pinX, pinZ);
+    const state = {
+      x: 0,
+      z: pinZ - (leZ - Math.cos(sweep) * gap),
+      altitude: PIN_HEIGHT * 0.32 - wing.center[1],
+      heading: 0,
+      speed: 42,
+      climbRate: 0,
+    };
+    const hit = stepPins([pin], { state, dt: 0.016, planeHit: true });
+    expect(hit).toBe(true);
+    expect(pin.v[0] * side).toBeGreaterThan(0);
+    expect(pin.v[2]).toBeLessThan(0);
+    expect(Math.abs(pin.v[0] / pin.v[2])).toBeCloseTo(Math.tan(sweep), 2);
+  }
+});
+
 test("the wing registers a hit on the pin neck", () => {
   const pin = createPinBody(0, -2);
   const state = {
@@ -81,6 +107,27 @@ test("a fast sweep still knocks a pin the prop passes through", () => {
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeGreaterThan(1);
 });
 
+test("the pilot who strikes a pin owns that pin", () => {
+  const pin = createPinBody(0, -2);
+  const state = {
+    x: 0,
+    z: -2 + 0.15,
+    altitude: PIN_HEIGHT * 0.32 - 0.55,
+    heading: 0,
+    speed: 42,
+    climbRate: 0,
+  };
+  const hit = stepPins([pin], {
+    state,
+    dt: 0.016,
+    planeHit: true,
+    authority: "pilot",
+    simulateUnowned: false,
+  });
+  expect(hit).toBe(true);
+  expect(pin.owner).toBe("pilot");
+});
+
 test("a moving pin knocks into a neighbor", () => {
   const a = createPinBody(0, 0);
   const b = createPinBody(PIN_SPACING * 0.92, 0);
@@ -104,6 +151,17 @@ test("a kicked pin settles and sleeps within about a second", () => {
   }
   expect(pin.sleeping).toBe(true);
   expect(Math.hypot(pin.v[0], pin.v[1], pin.v[2])).toBeLessThan(0.5);
+});
+
+test("a pin that is not straight up counts as knocked over", () => {
+  const pin = createPinBody(0, 0);
+  const lean = (15 * Math.PI) / 180;
+  pin.q = [Math.sin(lean / 2), 0, 0, Math.cos(lean / 2)];
+  expect(pinFallen(pin)).toBe(true);
+
+  const upright = (3 * Math.PI) / 180;
+  pin.q = [Math.sin(upright / 2), 0, 0, Math.cos(upright / 2)];
+  expect(pinFallen(pin)).toBe(false);
 });
 
 test("a tipped pin counts as fallen and reset stands it back up", () => {
