@@ -24,9 +24,11 @@ namespace ExerciseGames.Hubs
     {
         private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-        public Task Hello()
+        public Task<string> Hello()
         {
-            return Clients.Caller.SendAsync("hello", new { connectionId = Context.ConnectionId });
+            var connectionId = Context.ConnectionId;
+            _ = Clients.Caller.SendAsync("hello", new { connectionId });
+            return Task.FromResult(connectionId);
         }
 
         public Task<long> Clock()
@@ -45,18 +47,6 @@ namespace ExerciseGames.Hubs
             await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(code));
             Console.WriteLine($"Multiplayer connect: {Context.ConnectionId} joined room {code}");
             return code;
-        }
-
-        public async Task LeaveRoom(string code)
-        {
-            code = NormalizeCode(code);
-            if (code == null)
-            {
-                return;
-            }
-
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(code));
-            Console.WriteLine($"Multiplayer disconnect: {Context.ConnectionId} left room {code}");
         }
 
         public Task Plane(string code, PlaneStateDto state)

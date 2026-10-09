@@ -13,6 +13,8 @@ export const useRoomSession = () => {
   const clock = useRef(createServerClock());
   const codeRef = useRef(null);
   const connectionIdRef = useRef(null);
+  const disposed = useRef(false);
+  const opening = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionId, setConnectionId] = useState(null);
   const [room, setRoom] = useState(null);
@@ -23,6 +25,42 @@ export const useRoomSession = () => {
     setConnectionId(id);
   };
 
+  const open = () => {
+    const hub = connection.current;
+    if (!hub || disposed.current) {
+      return Promise.resolve();
+    }
+    if (hub.state === "Connected") {
+      return Promise.resolve();
+    }
+    if (opening.current) {
+      return opening.current;
+    }
+    opening.current = hub.start()
+      .then(async () => {
+        if (disposed.current) {
+          await hub.stop();
+          return;
+        }
+        const id = await hub.invoke("Hello");
+        noteConnection(id ?? null);
+        const sent = Date.now();
+        const server = await hub.invoke("Clock");
+        clock.current.note(sent, Date.now(), server);
+        setIsConnected(true);
+      })
+      .catch(() => {
+        if (!disposed.current) {
+          setIsConnected(false);
+          setError("Could not connect to the game server.");
+        }
+      })
+      .finally(() => {
+        opening.current = null;
+      });
+    return opening.current;
+  };
+
   useLifeCycle({
     onMount: () => {
       const hub = new HubConnectionBuilder()
@@ -31,9 +69,6 @@ export const useRoomSession = () => {
         .build();
       connection.current = hub;
 
-      hub.on("hello", (message) => {
-        noteConnection(message?.connectionId ?? null);
-      });
       hub.on("plane", (message) => handlers.current.onPlane?.(message));
       hub.on("pinState", (message) => handlers.current.onPinState?.(message));
       hub.onclose(() => setIsConnected(false));
@@ -46,27 +81,11 @@ export const useRoomSession = () => {
         }
       });
 
-      hub
-        .start()
-        .then(async () => {
-          setIsConnected(true);
-          await hub.invoke("Hello");
-          const sent = Date.now();
-          const server = await hub.invoke("Clock");
-          clock.current.note(sent, Date.now(), server);
-        })
-        .catch(() => {
-          setIsConnected(false);
-          setError("Could not connect to the game server.");
-        });
+      open();
     },
     onUnMount: () => {
-      const hub = connection.current;
-      const code = codeRef.current;
-      if (code) {
-        hub?.invoke("LeaveRoom", code).catch(() => {});
-      }
-      hub?.stop();
+      disposed.current = true;
+      connection.current?.stop();
     },
   });
 
@@ -75,14 +94,12 @@ export const useRoomSession = () => {
   }, []);
 
   const enter = async (code) => {
-    const previous = codeRef.current;
-    if (previous && previous !== code) {
-      try {
-        await connection.current?.invoke("LeaveRoom", previous);
-      } catch {
-        // The next join still moves this browser to the new code.
-      }
+    if (codeRef.current) {
+      codeRef.current = null;
+      setRoom(null);
+      await connection.current?.stop();
     }
+    await open();
     const joined = await connection.current.invoke("JoinRoom", code);
     if (!joined) {
       return null;
@@ -129,18 +146,16 @@ export const useRoomSession = () => {
   };
 
   const leaveRoom = async () => {
-    const code = codeRef.current;
     codeRef.current = null;
-    try {
-      if (code) {
-        await connection.current?.invoke("LeaveRoom", code);
-      }
-    } catch {
-      // The lobby is local either way.
-    }
     console.log("Multiplayer disconnect: left room");
     setRoom(null);
     setError(null);
+    try {
+      await connection.current?.stop();
+    } catch {
+      // Closing the socket drops the group either way.
+    }
+    await open();
   };
 
   const setPlayers = useCallback((players) => {
