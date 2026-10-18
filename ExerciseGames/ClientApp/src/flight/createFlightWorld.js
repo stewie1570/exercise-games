@@ -9,8 +9,6 @@ const GROUND_Y = 0;
 const colors = {
   grass: 0x4d7c3f,
   grassDark: 0x3d6a32,
-  field: 0x8fbc5a,
-  wheat: 0xc4a35a,
   runway: 0x3f4450,
   road: 0x3f3f46,
   roadEdge: 0x27272a,
@@ -19,14 +17,14 @@ const colors = {
   hangarRoof: 0x7c2d12,
   tower: 0xe2e8f0,
   towerTop: 0x0ea5e9,
-  tree: 0x166534,
-  trunk: 0x7c4a1e,
+  trunk: 0x9a6b3f,
+  palm: 0x2f9e44,
+  palmDark: 0x1f7a34,
   water: 0x2b6cb0,
   waterDeep: 0x1e4e8c,
   bank: 0x92400e,
   rock: 0x6b7280,
   rockWarm: 0x78716c,
-  pine: 0x14532d,
   snow: 0xf8fafc,
   planeBody: 0xf59e0b,
   planeWing: 0xf8fafc,
@@ -59,7 +57,7 @@ export const createFlightWorld = (container, { localTint } = {}) => {
 
   const { chunks, add } = createChunkIndex();
   scene.add(createGround());
-  createFields(add);
+  createLakes(add);
   createMountains(add);
   createRivers(add);
   createRoads(add);
@@ -280,24 +278,67 @@ const addDashes = (add, points, { width, length, gap, y, color }) => {
   }
 };
 
-const createFields = (add) => {
+const lakeShape = (radiusX, radiusZ, seed) => {
+  const lobes = 9;
+  const points = [];
+  for (let i = 0; i < lobes; i += 1) {
+    const angle = (i / lobes) * Math.PI * 2;
+    const wobble =
+      0.76 +
+      0.16 * Math.sin(seed + i * 1.7) +
+      0.1 * Math.sin(seed * 2.2 + i * 3.1);
+    points.push([Math.cos(angle) * radiusX * wobble, Math.sin(angle) * radiusZ * wobble]);
+  }
+  const shape = new THREE.Shape();
+  const mid = (index) => {
+    const [ax, ay] = points[index % lobes];
+    const [bx, by] = points[(index + 1) % lobes];
+    return [(ax + bx) / 2, (ay + by) / 2];
+  };
+  const [startX, startY] = mid(lobes - 1);
+  shape.moveTo(startX, startY);
+  points.forEach(([x, y], index) => {
+    const [mx, my] = mid(index);
+    shape.quadraticCurveTo(x, y, mx, my);
+  });
+  return shape;
+};
+
+const createLakes = (add) => {
   const plots = [
-    [180, 260, 70, 48, colors.field],
-    [280, 250, 62, 40, colors.wheat],
-    [210, 360, 80, 44, colors.wheat],
-    [-360, 250, 90, 50, colors.field],
-    [-470, 280, 70, 38, colors.wheat],
-    [160, -320, 56, 42, colors.field],
-    [-300, -280, 64, 36, colors.wheat],
+    [180, 260, 36, 28, colors.water, 1.2],
+    [280, 250, 32, 24, colors.waterDeep, 2.4],
+    [210, 360, 40, 26, colors.water, 3.7],
+    [-360, 250, 46, 30, colors.waterDeep, 4.1],
+    [-470, 280, 34, 24, colors.water, 5.5],
+    [160, -320, 30, 24, colors.water, 6.2],
+    [-300, -280, 34, 22, colors.waterDeep, 7.8],
   ];
-  plots.forEach(([x, z, w, d, color]) => {
-    const field = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, d),
-      new THREE.MeshLambertMaterial({ color })
+  const materialFor = new Map();
+  plots.forEach(([x, z, radiusX, radiusZ, color, seed]) => {
+    let material = materialFor.get(color);
+    if (!material) {
+      material = new THREE.MeshLambertMaterial({
+        color,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      materialFor.set(color, material);
+    }
+    const lake = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(lakeShape(radiusX, radiusZ, seed), {
+        depth: 0.08,
+        bevelEnabled: false,
+        curveSegments: 8,
+      }),
+      material
     );
-    field.rotation.x = -Math.PI / 2;
-    field.position.set(x, 0.03, z);
-    add(field);
+    lake.geometry.rotateX(-Math.PI / 2);
+    lake.rotation.y = seed * 0.35;
+    // Sit just above the grass so the surface does not z-fight the ground plane.
+    lake.position.set(x, 0.1, z);
+    add(lake);
   });
 };
 
@@ -523,6 +564,56 @@ const createAirportSign = () => {
   return sign;
 };
 
+const createPalm = (x, z, index) => {
+  const palm = new THREE.Group();
+  const height = 10 + (index % 4) * 1.6;
+  const segments = 4;
+  const segmentHeight = height / segments;
+  const bend = ((index % 7) - 3) * 0.045;
+  const trunkMat = sharedPalmMaterials.trunk;
+  for (let segment = 0; segment < segments; segment += 1) {
+    const trunk = new THREE.Mesh(sharedPalmGeometries.trunk, trunkMat);
+    const taper = 1 - segment * 0.12;
+    trunk.scale.set(taper, segmentHeight, taper);
+    const base = segment * segmentHeight;
+    trunk.position.set(bend * base, base + segmentHeight / 2, bend * base * 0.35);
+    palm.add(trunk);
+  }
+
+  const crown = new THREE.Group();
+  crown.position.y = height;
+  const frondCount = 8;
+  for (let i = 0; i < frondCount; i += 1) {
+    const frond = new THREE.Mesh(
+      sharedPalmGeometries.frond,
+      i % 2 === 0 ? sharedPalmMaterials.frond : sharedPalmMaterials.frondDark
+    );
+    const length = 4.2 + (index % 3) * 0.45;
+    frond.scale.set(1, 1, length);
+    frond.position.set(0, -0.25, length * 0.42);
+    frond.rotation.x = 0.72 + (i % 3) * 0.08;
+    const arm = new THREE.Group();
+    arm.rotation.y = (i / frondCount) * Math.PI * 2;
+    arm.add(frond);
+    crown.add(arm);
+  }
+  palm.add(crown);
+  palm.position.set(x, 0, z);
+  palm.rotation.y = index * 0.9;
+  return palm;
+};
+
+const sharedPalmGeometries = {
+  trunk: new THREE.CylinderGeometry(0.34, 0.48, 1, 6),
+  frond: new THREE.BoxGeometry(0.55, 0.08, 1),
+};
+
+const sharedPalmMaterials = {
+  trunk: new THREE.MeshLambertMaterial({ color: colors.trunk }),
+  frond: new THREE.MeshLambertMaterial({ color: colors.palm }),
+  frondDark: new THREE.MeshLambertMaterial({ color: colors.palmDark }),
+};
+
 const createTrees = (add) => {
   const spots = [
     [90, 40], [120, -30], [80, -160], [-90, -40], [-130, 20],
@@ -538,19 +629,7 @@ const createTrees = (add) => {
     if (pointInAlley(x, z, 12)) {
       return;
     }
-    const height = 8 + (index % 5) * 1.5;
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.5, 0.7, 3, 6),
-      new THREE.MeshLambertMaterial({ color: colors.trunk })
-    );
-    trunk.position.set(x, 1.5, z);
-    const leaves = new THREE.Mesh(
-      new THREE.ConeGeometry(3.4, height, 7),
-      new THREE.MeshLambertMaterial({ color: index % 3 === 0 ? colors.pine : colors.tree })
-    );
-    leaves.position.set(x, 3 + height / 2, z);
-    add(trunk);
-    add(leaves);
+    add(createPalm(x, z, index));
   });
 };
 
