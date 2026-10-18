@@ -1,3 +1,4 @@
+import { PLANE_WINGSPAN } from "../bowling/dimensions";
 import { createAircraftState, stepAircraft } from "../physics";
 
 export const PLANE_BROADCAST_MS = 100;
@@ -111,16 +112,22 @@ export const livingPilots = (heard, at, selfId, staleMs = PILOT_STALE_MS) => {
   return ids;
 };
 
-export const FORMATION_SPACING = 16;
+export const FORMATION_SPACING = PLANE_WINGSPAN * 2;
 
-export const spawnAircraft = (slot) => {
+// Host flag is per browser, so a second tab can still look like the host.
+// Anyone who joined uses the single guest start, two wingspans to the right.
+export const spawnSlotFor = ({ role, isHost } = {}) => (
+  role === "guest" || isHost === false ? 1 : 0
+);
+
+export const spawnAircraft = (slot = 0) => {
   const state = createAircraftState();
-  const index = Math.max(0, slot);
-  const side = index === 0 ? 0 : (index % 2 === 0 ? -1 : 1);
+  if (!(slot > 0)) {
+    return state;
+  }
   return {
     ...state,
-    x: state.x + side * FORMATION_SPACING,
-    z: state.z - index * 6,
+    x: state.x + FORMATION_SPACING,
   };
 };
 

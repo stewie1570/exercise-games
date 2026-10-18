@@ -73,6 +73,7 @@ export const createFlightWorld = (container, { localTint } = {}) => {
   const aircraft = createUltralight(localTint);
   scene.add(aircraft);
   const remoteCraft = new Map();
+  const remoteMisses = new Map();
   const retiredCraft = [];
 
   const bowling = createBowling();
@@ -101,6 +102,7 @@ export const createFlightWorld = (container, { localTint } = {}) => {
         return;
       }
       seen.add(remote.id);
+      remoteMisses.delete(remote.id);
       let craft = remoteCraft.get(remote.id);
       if (!craft) {
         craft = createUltralight(remote.tint);
@@ -109,10 +111,17 @@ export const createFlightWorld = (container, { localTint } = {}) => {
       }
       poseCraft(craft, remote.state, dt);
     });
-    for (const [id, craft] of remoteCraft) {
+    for (const [id, craft] of [...remoteCraft]) {
       if (seen.has(id)) {
         continue;
       }
+      // A single missed update used to delete the mesh and rebuild it next frame.
+      const misses = (remoteMisses.get(id) ?? 0) + 1;
+      remoteMisses.set(id, misses);
+      if (misses < 4) {
+        continue;
+      }
+      remoteMisses.delete(id);
       scene.remove(craft);
       remoteCraft.delete(id);
       retiredCraft.push(craft);
@@ -569,6 +578,8 @@ const addSweptPanel = (group, material, { span, thickness, chord, y, z, zOffset 
       pos.setZ(i, pos.getZ(i) + Math.abs(pos.getX(i)) * WING_SHEAR);
     }
     geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, material);
     mesh.position.set(0, y, z);
     group.add(mesh);
@@ -663,6 +674,9 @@ const createUltralight = (tint) => {
   addStrut(group, darkMat, new THREE.Vector3(0.28, 0.22, 0.15), new THREE.Vector3(0.78, -0.32, 0.32));
   addStrut(group, darkMat, new THREE.Vector3(-0.28, 0.22, 0.15), new THREE.Vector3(-0.78, -0.32, 0.32));
 
+  group.traverse((child) => {
+    child.frustumCulled = false;
+  });
   group.userData.prop = prop;
   return group;
 };

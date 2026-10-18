@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { PLANE_WINGSPAN } from "../bowling/dimensions";
 import { createAircraftState } from "../physics";
 import {
   FORMATION_SPACING,
@@ -16,13 +17,31 @@ import {
   rememberPilot,
   snapshotAircraft,
   spawnAircraft,
+  spawnSlotFor,
 } from "./planeSync";
 
-test("pilots spawn apart and keep a stable color", () => {
+test("a guest starts aside even when this browser still remembers the host code", () => {
+  expect(spawnSlotFor({ role: "host", isHost: true })).toBe(0);
+  expect(spawnSlotFor({ role: "guest", isHost: true })).toBe(1);
+  expect(spawnSlotFor({ isHost: false })).toBe(1);
+  const home = spawnAircraft(0);
+  const guest = spawnAircraft(spawnSlotFor({ role: "guest", isHost: true }));
+  const otherGuest = spawnAircraft(2);
+  expect(guest.x).toBe(home.x + FORMATION_SPACING);
+  expect(guest.z).toBe(home.z);
+  expect(otherGuest.x).toBe(guest.x);
+  expect(otherGuest.z).toBe(guest.z);
+});
+
+test("the second pilot starts two wingspans to the right", () => {
+  const home = createAircraftState();
   const first = spawnAircraft(0);
   const second = spawnAircraft(1);
+  expect(first.x).toBe(home.x);
+  expect(first.z).toBe(home.z);
   expect(second.x - first.x).toBe(FORMATION_SPACING);
-  expect(second.z).toBeLessThan(first.z);
+  expect(FORMATION_SPACING).toBeCloseTo(PLANE_WINGSPAN * 2);
+  expect(second.z).toBe(first.z);
   expect(pilotTint(0)).toEqual(pilotTint(8));
   expect(pilotTint(1).body).not.toBe(pilotTint(0).body);
 });

@@ -12,6 +12,7 @@ export const useRoomSession = () => {
   const handlers = useRef({});
   const clock = useRef(createServerClock());
   const codeRef = useRef(null);
+  const roleRef = useRef(null);
   const connectionIdRef = useRef(null);
   const disposed = useRef(false);
   const opening = useRef(null);
@@ -101,18 +102,20 @@ export const useRoomSession = () => {
     }
     await open();
     const joined = await connection.current.invoke("JoinRoom", code);
-    if (!joined) {
+    const roomCode = typeof joined === "string" ? joined : joined?.code;
+    if (!roomCode) {
       return null;
     }
-    codeRef.current = joined;
+    codeRef.current = roomCode;
     const self = connectionIdRef.current;
-    setRoom({ code: joined, players: self ? [self] : [] });
+    setRoom({ code: roomCode, players: self ? [self] : [] });
     setError(null);
-    return joined;
+    return roomCode;
   };
 
   const hostRoom = async () => {
     setError(null);
+    roleRef.current = "host";
     try {
       const code = createRoomCode();
       rememberHostCode(code);
@@ -131,6 +134,7 @@ export const useRoomSession = () => {
 
   const joinRoom = async (code) => {
     setError(null);
+    roleRef.current = "guest";
     try {
       const joined = await enter(code);
       if (!joined) {
@@ -147,6 +151,7 @@ export const useRoomSession = () => {
 
   const leaveRoom = async () => {
     codeRef.current = null;
+    roleRef.current = null;
     console.log("Multiplayer disconnect: left room");
     setRoom(null);
     setError(null);
@@ -186,6 +191,7 @@ export const useRoomSession = () => {
     room,
     error,
     isHost,
+    role: roleRef.current,
     now: () => clock.current.now(),
     subscribe,
     hostRoom,

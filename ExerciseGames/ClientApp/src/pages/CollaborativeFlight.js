@@ -15,6 +15,7 @@ import {
   rememberPilot,
   snapshotAircraft,
   spawnAircraft,
+  spawnSlotFor,
 } from "../flight/multiplayer/planeSync";
 import {
   acceptPinRevision,
@@ -207,7 +208,7 @@ export const CollaborativeFlight = ({ session }) => {
     }
 
     const current = sessionRef.current;
-    const aircraft = spawnAircraft(0);
+    const aircraft = spawnAircraft(spawnSlotFor(current));
     aircraftRef.current = aircraft;
     const world = createFlightWorld(host, { localTint: pilotTintForId(current.connectionId) });
     worldRef.current = world;
@@ -300,15 +301,15 @@ export const CollaborativeFlight = ({ session }) => {
           publishPins("join");
         }
       }
-      const allowed = live.isHost ? new Set(rosterRef.current) : null;
       const hostRoster = hostRosterRef.current;
       const remotes = [];
       for (const [id, pilot] of pilotsRef.current) {
         const stale = at - (pilot.heardAt ?? 0) > PILOT_STALE_MS;
-        const droppedByHost = Boolean(hostRoster)
+        const droppedByHost = !live.isHost
+          && Boolean(hostRoster)
           && !hostRoster.ids.includes(id)
           && hostRoster.at > (pilot.seenAt ?? 0);
-        if (id === live.connectionId || (live.isHost ? !allowed.has(id) : stale || droppedByHost)) {
+        if (id === live.connectionId || stale || droppedByHost) {
           pilotsRef.current.delete(id);
           continue;
         }
