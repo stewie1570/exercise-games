@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --global yarn
+      - name: Install frontend dependencies
+        working-directory: ExerciseGames/ClientApp
+        run: yarn install --frozen-lockfile
+      - name: Frontend tests
+        working-directory: ExerciseGames/ClientApp
+        run: yarn test
+
+  server:
+    name: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: Server tests
+        run: dotnet test --configuration Release

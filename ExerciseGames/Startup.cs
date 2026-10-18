@@ -1,5 +1,7 @@
 using System;
+using ExerciseGames.Features;
 using ExerciseGames.Hubs;
+using ExerciseGames.Together;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +28,11 @@ namespace ExerciseGames
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddSignalR();
+            services.AddSingleton<IServerClock, SystemServerClock>();
+            services.AddSingleton<IFlightRoom, SignalRFlightRoom>();
+            services.AddSingleton<IPilotGreeting, SignalRPilotGreeting>();
+            services.AddSingleton<ISharedFlight, SharedFlight>();
+            services.AddSingleton<IArrowControls, EnvironmentArrowControls>();
             services.AddResponseCompression();
             services.AddControllersWithViews();
 
