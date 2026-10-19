@@ -10,11 +10,15 @@ dotnet run --project ExerciseGames/ExerciseGames.csproj
 
 Then open [https://localhost:5001](https://localhost:5001). Allow camera access on the diagnostics page so the stick-figure overlay can trace your head and arms.
 
-Frontend unit tests:
+Tests:
 
 ```terminal
 cd ExerciseGames/ClientApp
 yarn test
+```
+
+```terminal
+dotnet test
 ```
 
 ## Docker

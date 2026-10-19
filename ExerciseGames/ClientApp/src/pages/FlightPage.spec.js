@@ -28,7 +28,7 @@ vi.mock("../flight/createFlightWorld", () => ({
 
 test("flight page explains arm flaps and tilt steering", () => {
   render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <FlightPage />
     </MemoryRouter>
   );

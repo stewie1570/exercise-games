@@ -4,7 +4,7 @@ import { HomePage } from "./HomePage";
 
 test("home page links to the ultralight game and diagnostics", () => {
   render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <HomePage />
     </MemoryRouter>
   );

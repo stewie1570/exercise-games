@@ -1,26 +1,31 @@
-using System;
+using ExerciseGames.Features;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ExerciseGames.Controllers.Api
 {
+    public class GameFeaturesResponse
+    {
+        public bool ArrowControls { get; set; }
+    }
+
     [ApiController]
     [Route("api/[controller]")]
     public class FeaturesController : ControllerBase
     {
+        private readonly IArrowControls _arrowControls;
+
+        public FeaturesController(IArrowControls arrowControls)
+        {
+            _arrowControls = arrowControls;
+        }
+
         [HttpGet]
         public IActionResult Get()
         {
-            return Ok(new
+            return Ok(new GameFeaturesResponse
             {
-                arrowControls = IsEnabled("VITE_ARROW_CONTROLS") || IsEnabled("ARROW_CONTROLS"),
+                ArrowControls = _arrowControls.Enabled
             });
-        }
-
-        private static bool IsEnabled(string name)
-        {
-            var value = Environment.GetEnvironmentVariable(name);
-            return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-                || value == "1";
         }
     }
 }

@@ -67,7 +67,7 @@ beforeEach(() => {
 test("the lobby hosts or joins with a 4-character code", async () => {
   const user = userEvent.setup();
   render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <TogetherPage />
     </MemoryRouter>
   );
@@ -92,7 +92,7 @@ test("a joined room shows the code and the shared lane", () => {
   session.room = { code: "K7QP", players: ["me", "them"] };
   session.isHost = true;
   render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <TogetherPage />
     </MemoryRouter>
   );
