@@ -23,22 +23,38 @@ const defaultEnumerateDevices = () =>
   navigator.mediaDevices.enumerateDevices?.() ?? Promise.resolve([]);
 const defaultDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The lite pose model resamples every frame to 256px. A 720p capture spends
+// camera and GPU time on pixels that never reach the tracker.
 export const CAMERA_VIDEO_CONSTRAINTS = {
-  width: { min: 1280, ideal: 1280 },
-  height: { min: 720, ideal: 720 },
+  width: { ideal: 640, max: 640 },
+  height: { ideal: 480, max: 480 },
+  frameRate: { ideal: 30, max: 30 },
 };
 
-export const openCameraStream = async ({
-  getUserMedia = defaultGetUserMedia,
-  enumerateDevices = defaultEnumerateDevices,
-  delay = defaultDelay,
-  retries = 3,
-  retryDelayMs = 250,
-} = {}) => {
-  const constraints = { audio: false, video: CAMERA_VIDEO_CONSTRAINTS };
-  let lastError;
+export const RELAXED_CAMERA_VIDEO_CONSTRAINTS = {
+  width: { ideal: 640 },
+  height: { ideal: 480 },
+  frameRate: { ideal: 30 },
+};
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
+const constraintProfiles = [
+  CAMERA_VIDEO_CONSTRAINTS,
+  RELAXED_CAMERA_VIDEO_CONSTRAINTS,
+  true,
+];
+
+const isOverConstrained = (err) =>
+  err?.name === "OverconstrainedError" || err?.name === "ConstraintNotSatisfiedError";
+
+const openWithRetries = async (constraints, {
+  getUserMedia,
+  enumerateDevices,
+  delay,
+  retries,
+  retryDelayMs,
+}) => {
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       if (attempt > 1) {
         await delay(retryDelayMs * (attempt - 1));
@@ -49,6 +65,32 @@ export const openCameraStream = async ({
       lastError = err;
       const retryable = err?.name === "NotReadableError" || err?.name === "AbortError";
       if (!retryable || attempt === retries) {
+        throw err;
+      }
+    }
+  }
+  throw lastError;
+};
+
+export const openCameraStream = async ({
+  getUserMedia = defaultGetUserMedia,
+  enumerateDevices = defaultEnumerateDevices,
+  delay = defaultDelay,
+  retries = 3,
+  retryDelayMs = 250,
+} = {}) => {
+  let lastError;
+
+  for (let profile = 0; profile < constraintProfiles.length; profile += 1) {
+    try {
+      return await openWithRetries(
+        { audio: false, video: constraintProfiles[profile] },
+        { getUserMedia, enumerateDevices, delay, retries, retryDelayMs }
+      );
+    } catch (err) {
+      lastError = err;
+      const canLoosen = profile < constraintProfiles.length - 1 && isOverConstrained(err);
+      if (!canLoosen) {
         throw err;
       }
     }

@@ -2,7 +2,9 @@ import * as THREE from "three";
 import { CHUNK_SIZE, DRAW_DISTANCE, chunkCenter, chunkIndex, isChunkInRange } from "./chunkCull";
 import { createBowling, pointInAlley } from "./bowling/createBowling";
 import { PLANE_WINGSPAN, WING_CHORD, WING_SHEAR, WING_Y, WING_Z } from "./bowling/dimensions";
+import { flightPixelRatio, flightRendererParameters } from "./flightRender";
 import { FLIGHT } from "./physics";
+import { freezeStaticMeshes, releaseRetiredGeometries } from "./staticBatch";
 
 const GROUND_Y = 0;
 
@@ -39,12 +41,8 @@ export const createFlightWorld = (container, { localTint } = {}) => {
   scene.fog = new THREE.Fog(0x87b7e0, 240, 1600);
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, DRAW_DISTANCE + 80);
-  const dpr = window.devicePixelRatio || 1;
-  const renderer = new THREE.WebGLRenderer({
-    antialias: dpr < 1.5,
-    powerPreference: "high-performance",
-  });
-  renderer.setPixelRatio(Math.min(dpr, 1.5));
+  const renderer = createFlightRenderer();
+  renderer.setPixelRatio(1);
   renderer.domElement.style.display = "block";
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
@@ -56,17 +54,21 @@ export const createFlightWorld = (container, { localTint } = {}) => {
   scene.add(sun);
 
   const { chunks, add } = createChunkIndex();
-  scene.add(createGround());
+  const ground = createGround();
+  scene.add(ground);
   createLakes(add);
   createMountains(add);
   createRivers(add);
   createRoads(add);
   add(createAirport());
   createTrees(add);
+  const retired = new Set();
   chunks.forEach((chunk) => {
-    chunk.updateMatrixWorld(true);
     scene.add(chunk);
+    freezeStaticMeshes(chunk, retired);
   });
+  freezeStaticMeshes(ground, retired);
+  releaseRetiredGeometries(scene, retired);
 
   const aircraft = createUltralight(localTint);
   scene.add(aircraft);
@@ -90,6 +92,7 @@ export const createFlightWorld = (container, { localTint } = {}) => {
     const height = container.clientHeight || 1;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(flightPixelRatio(width, height, window.devicePixelRatio));
     renderer.setSize(width, height, false);
   };
 
@@ -130,7 +133,6 @@ export const createFlightWorld = (container, { localTint } = {}) => {
     poseCraft(aircraft, state, dt);
     syncRemotes(frame.remotes ?? [], dt);
 
-    aircraft.updateMatrixWorld();
     camera.position.copy(chaseLocal);
     aircraft.localToWorld(camera.position);
     lookAt.copy(focusLocal);
@@ -158,9 +160,13 @@ export const createFlightWorld = (container, { localTint } = {}) => {
       chunkSphere.radius = bounds.radius;
       chunk.visible = frustum.intersectsSphere(chunkSphere);
     }
+    bowling.group.updateMatrixWorld();
     renderer.render(scene, camera);
     return bowlingHud;
   };
+
+  scene.updateMatrixWorld(true);
+  scene.matrixWorldAutoUpdate = false;
 
   const dispose = () => {
     retiredCraft.forEach((craft) => scene.add(craft));
@@ -206,6 +212,19 @@ const createGround = () => {
   patch.position.set(0, 0.02, 0);
   group.add(patch);
   return group;
+};
+
+const createFlightRenderer = () => {
+  const parameters = flightRendererParameters();
+  try {
+    return new THREE.WebGLRenderer(parameters);
+  } catch {
+    return new THREE.WebGLRenderer({
+      ...parameters,
+      antialias: false,
+      powerPreference: "default",
+    });
+  }
 };
 
 const createChunkIndex = () => {
@@ -635,7 +654,6 @@ const createTrees = (add) => {
 
 const poseCraft = (craft, state, dt) => {
   craft.position.set(state.x, state.altitude, state.z);
-  craft.rotation.order = "YXZ";
   craft.rotation.y = -state.heading;
   const airborne = state.altitude > FLIGHT.minAltitude + 0.05;
   craft.rotation.z = airborne ? -(state.turn || 0) * 0.45 : 0;
@@ -645,6 +663,7 @@ const poseCraft = (craft, state, dt) => {
   const spinning = state.moving || (state.throttle || 0) > 0.02;
   const propSpeed = spinning ? 10 + (state.speed || 0) * 0.4 + (state.throttle || 0) * 32 : 0;
   craft.userData.prop.rotation.z += propSpeed * dt;
+  craft.updateMatrixWorld();
 };
 
 const addSweptPanel = (group, material, { span, thickness, chord, y, z, zOffset = 0 }) => {
@@ -670,6 +689,7 @@ const sweptZ = (x, z) => z + Math.abs(x) * WING_SHEAR;
 const createUltralight = (tint) => {
   const group = new THREE.Group();
   group.frustumCulled = false;
+  group.rotation.order = "YXZ";
   const bodyMat = new THREE.MeshLambertMaterial({ color: tint?.body ?? colors.planeBody });
   const wingMat = new THREE.MeshLambertMaterial({ color: colors.planeWing });
   const darkMat = new THREE.MeshLambertMaterial({ color: colors.planeAccent });

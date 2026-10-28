@@ -9,6 +9,7 @@ import {
 } from "./dimensions";
 import { bowlingHud, createBowlingGame, stepBowlingGame } from "./game";
 import { createPinBody } from "./physics";
+import { freezeStaticMeshes, releaseRetiredGeometries } from "../staticBatch";
 
 export const ALLEY = {
   x: 72,
@@ -25,7 +26,11 @@ export const createBowling = () => {
   const originZ = ALLEY.headZ;
   const group = new THREE.Group();
   group.name = "Bowling alley";
-  group.add(createAlleyMeshes(originX, originZ));
+  const alley = createAlleyMeshes(originX, originZ);
+  const retired = new Set();
+  freezeStaticMeshes(alley, retired);
+  releaseRetiredGeometries(alley, retired);
+  group.add(alley);
 
   const pinsGroup = new THREE.Group();
   group.add(pinsGroup);

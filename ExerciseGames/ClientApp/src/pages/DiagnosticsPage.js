@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import styled from "styled-components";
 import { AppNav } from "../components/AppNav";
+import { IDLE_FRAME_MS, startPacedLoop } from "../flight/frameLoop";
 import { ARMS_OUT_DEG, FlapDetector } from "../flight/flapThrottle";
 import { createAircraftState, FLIGHT, stepAircraft } from "../flight/physics";
 import { useGameHub } from "../hooks/useGameHub";
@@ -162,12 +163,8 @@ export const DiagnosticsPage = () => {
   });
 
   useEffect(() => {
-    let last = performance.now();
     let lastHud = 0;
-    let frameId = 0;
-    const loop = (now) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
+    const stopLoop = startPacedLoop((dt, now) => {
       flapRef.current.tick(now);
       const throttle = flapRef.current.throttle;
       aircraftRef.current = stepAircraft(
@@ -185,10 +182,9 @@ export const DiagnosticsPage = () => {
           altitude: aircraftRef.current.altitude,
         });
       }
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frameId);
+      return IDLE_FRAME_MS;
+    });
+    return () => stopLoop();
   }, []);
 
   const running = status === "running";

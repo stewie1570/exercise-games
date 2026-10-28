@@ -34,7 +34,11 @@ test("flight page explains arm flaps and tilt steering", () => {
   );
 
   expect(screen.getByRole("heading", { name: "Ultralight flight" })).toBeInTheDocument();
-  expect(usePoseCamera).toHaveBeenCalledWith(expect.objectContaining({ autoStart: true }));
+  expect(usePoseCamera).toHaveBeenCalledWith(expect.objectContaining({
+    autoStart: true,
+    annotate: false,
+    publishPose: false,
+  }));
   expect(screen.getByRole("button", { name: "Starting..." })).toBeInTheDocument();
   expect(screen.getByText(/camera starts automatically/i)).toBeInTheDocument();
   expect(screen.getByText(/both arms out past 40/i)).toBeInTheDocument();

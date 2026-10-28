@@ -1,5 +1,11 @@
 import { vi } from "vitest";
-import { cameraErrorMessage, openCameraStream, stopMediaStream } from "./camera";
+import {
+  CAMERA_VIDEO_CONSTRAINTS,
+  RELAXED_CAMERA_VIDEO_CONSTRAINTS,
+  cameraErrorMessage,
+  openCameraStream,
+  stopMediaStream,
+} from "./camera";
 
 test("NotReadableError mentions the browser could not start the camera", () => {
   expect(
@@ -37,10 +43,28 @@ test("openCameraStream retries NotReadableError then succeeds", async () => {
   expect(getUserMedia).toHaveBeenCalledTimes(2);
   expect(getUserMedia).toHaveBeenCalledWith({
     audio: false,
-    video: { width: { min: 1280, ideal: 1280 }, height: { min: 720, ideal: 720 } },
+    video: CAMERA_VIDEO_CONSTRAINTS,
   });
   expect(delay).toHaveBeenCalledWith(250);
   expect(enumerateDevices).toHaveBeenCalledTimes(1);
+});
+
+test("openCameraStream loosens the resolution cap when the camera rejects it", async () => {
+  const stream = { id: "cam" };
+  const getUserMedia = vi
+    .fn()
+    .mockRejectedValueOnce({ name: "OverconstrainedError", message: "640x480 unsupported" })
+    .mockResolvedValueOnce(stream);
+
+  await expect(openCameraStream({ getUserMedia, retries: 3 })).resolves.toBe(stream);
+  expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+    audio: false,
+    video: CAMERA_VIDEO_CONSTRAINTS,
+  });
+  expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+    audio: false,
+    video: RELAXED_CAMERA_VIDEO_CONSTRAINTS,
+  });
 });
 
 test("openCameraStream does not retry permission errors", async () => {

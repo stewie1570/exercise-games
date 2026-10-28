@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
 import { createFlightWorld } from "../flight/createFlightWorld";
+import { startPacedLoop } from "../flight/frameLoop";
 import { arrowControlsEnabled, createArrowControls } from "../flight/arrowControls";
 import { FlapDetector } from "../flight/flapThrottle";
 import {
@@ -179,6 +180,8 @@ export const CollaborativeFlight = ({ session }) => {
     videoRef,
     canvasRef,
     autoStart: true,
+    annotate: false,
+    publishPose: false,
     onFrame: (overlay) => {
       if (arrowControlsEnabled()) {
         return;
@@ -219,12 +222,10 @@ export const CollaborativeFlight = ({ session }) => {
     document.addEventListener("fullscreenchange", onResize);
     document.addEventListener("webkitfullscreenchange", onResize);
 
-    let last = performance.now();
     let lastHud = 0;
     let lastPins = 0;
     const arrows = arrowControlsEnabled() ? createArrowControls() : null;
     let announced = "";
-    let frameId = 0;
 
     const planes = createPlaneCadence({
       send: () => {
@@ -273,9 +274,7 @@ export const CollaborativeFlight = ({ session }) => {
     };
     publishPinsRef.current = publishPins;
 
-    const loop = (nowMs) => {
-      const dt = Math.min(0.05, (nowMs - last) / 1000);
-      last = nowMs;
+    const stopLoop = startPacedLoop((dt, nowMs) => {
       const live = sessionRef.current;
       const controls = controlsRef.current;
       if (arrows) {
@@ -385,14 +384,12 @@ export const CollaborativeFlight = ({ session }) => {
           bowling: shown,
         });
       }
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
+    });
 
     return () => {
       arrows?.dispose();
       planes.stop();
-      cancelAnimationFrame(frameId);
+      stopLoop();
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);
       document.removeEventListener("webkitfullscreenchange", onResize);
