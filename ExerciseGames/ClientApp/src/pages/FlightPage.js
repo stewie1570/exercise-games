@@ -3,6 +3,7 @@ import styled from "styled-components";
 import { AppNav } from "../components/AppNav";
 import { createFlightWorld } from "../flight/createFlightWorld";
 import { BowlingScoreboard } from "../flight/bowling/BowlingScoreboard";
+import { startPacedLoop } from "../flight/frameLoop";
 import { FlapDetector } from "../flight/flapThrottle";
 import { arrowControlsEnabled, createArrowControls } from "../flight/arrowControls";
 import { createAircraftState, FLIGHT, stepAircraft } from "../flight/physics";
@@ -150,6 +151,8 @@ export const FlightPage = () => {
     videoRef,
     canvasRef,
     autoStart: true,
+    annotate: false,
+    publishPose: false,
     onFrame: (overlay) => {
       if (arrowControlsEnabled()) {
         return;
@@ -186,13 +189,9 @@ export const FlightPage = () => {
     document.addEventListener("fullscreenchange", onResize);
     document.addEventListener("webkitfullscreenchange", onResize);
 
-    let last = performance.now();
     let lastHud = 0;
-    let frameId = 0;
     const arrows = arrowControlsEnabled() ? createArrowControls() : null;
-    const loop = (now) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
+    const stopLoop = startPacedLoop((dt, now) => {
       const controls = controlsRef.current;
       if (arrows) {
         Object.assign(controls, arrows.step(dt));
@@ -216,13 +215,11 @@ export const FlightPage = () => {
           bowling,
         });
       }
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
+    });
 
     return () => {
       arrows?.dispose();
-      cancelAnimationFrame(frameId);
+      stopLoop();
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);
       document.removeEventListener("webkitfullscreenchange", onResize);

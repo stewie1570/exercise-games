@@ -1,6 +1,7 @@
 import { cameraErrorMessage, openCameraStream, stopMediaStream, waitForVideo } from "../pose/camera";
 import { drawMirroredVideo, drawStickFigure } from "../pose/drawStickFigure";
 import { createPoseLandmarker } from "../pose/landmarker";
+import { detectionSize, overlayBitmapSize } from "../pose/overlaySize";
 import { PoseSmoother } from "../pose/poseSmoother";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -14,7 +15,32 @@ const emptyPose = {
 
 const UI_UPDATE_MS = 100;
 
-export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart = false }) => {
+const detectionSource = (video, cache) => {
+  const size = detectionSize(video.videoWidth, video.videoHeight);
+  if (!size) {
+    return video;
+  }
+  if (!cache.canvas) {
+    cache.canvas = document.createElement("canvas");
+    cache.ctx = cache.canvas.getContext("2d", { alpha: false });
+  }
+  if (cache.canvas.width !== size.width || cache.canvas.height !== size.height) {
+    cache.canvas.width = size.width;
+    cache.canvas.height = size.height;
+  }
+  cache.ctx.drawImage(video, 0, 0, size.width, size.height);
+  return cache.canvas;
+};
+
+export const usePoseCamera = ({
+  videoRef,
+  canvasRef,
+  onPose,
+  onFrame,
+  autoStart = false,
+  annotate = true,
+  publishPose = true,
+}) => {
   const landmarkerRef = useRef(null);
   const smootherRef = useRef(new PoseSmoother());
   const overlayRef = useRef(null);
@@ -22,10 +48,16 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart 
   const frameRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
   const lastUiUpdateRef = useRef(0);
+  const bitmapRef = useRef(null);
+  const detectCacheRef = useRef({ canvas: null, ctx: null });
   const onPoseRef = useRef(onPose);
   const onFrameRef = useRef(onFrame);
+  const annotateRef = useRef(annotate);
+  const publishPoseRef = useRef(publishPose);
   onPoseRef.current = onPose;
   onFrameRef.current = onFrame;
+  annotateRef.current = annotate;
+  publishPoseRef.current = publishPose;
 
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
@@ -63,21 +95,47 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart 
       frameRef.current = requestAnimationFrame(renderLoop);
       return;
     }
-    if (canvas.width !== width) {
-      canvas.width = width;
-    }
-    if (canvas.height !== height) {
-      canvas.height = height;
-    }
 
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, width, height);
-    drawMirroredVideo(ctx, video, width, height);
-
-    if (video.currentTime !== lastVideoTimeRef.current) {
+    const frameChanged = video.currentTime !== lastVideoTimeRef.current;
+    if (!frameChanged && bitmapRef.current) {
+      frameRef.current = requestAnimationFrame(renderLoop);
+      return;
+    }
+    if (frameChanged) {
       lastVideoTimeRef.current = video.currentTime;
+    }
+
+    const cached = bitmapRef.current;
+    if (!cached || cached.pendingLayout || cached.videoWidth !== width || cached.videoHeight !== height) {
+      const cssWidth = canvas.clientWidth;
+      const next = overlayBitmapSize({
+        clientWidth: cssWidth,
+        videoWidth: width,
+        videoHeight: height,
+        dpr: window.devicePixelRatio || 1,
+      });
+      bitmapRef.current = {
+        ...next,
+        videoWidth: width,
+        videoHeight: height,
+        pendingLayout: cssWidth <= 0,
+      };
+      if (canvas.width !== next.width || canvas.height !== next.height) {
+        canvas.width = next.width;
+        canvas.height = next.height;
+      }
+    }
+
+    const bitmap = bitmapRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    drawMirroredVideo(ctx, video, bitmap.width, bitmap.height);
+
+    if (frameChanged) {
       try {
-        const result = landmarker.detectForVideo(video, performance.now());
+        const result = landmarker.detectForVideo(
+          detectionSource(video, detectCacheRef.current),
+          performance.now()
+        );
         overlayRef.current = smootherRef.current.apply(
           result?.landmarks?.[0],
           performance.now()
@@ -85,9 +143,14 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart 
         onFrameRef.current?.(overlayRef.current);
 
         const now = performance.now();
-        if (now - lastUiUpdateRef.current >= UI_UPDATE_MS) {
+        if (
+          (publishPoseRef.current || onPoseRef.current)
+          && now - lastUiUpdateRef.current >= UI_UPDATE_MS
+        ) {
           lastUiUpdateRef.current = now;
-          setPose(overlayRef.current.pose);
+          if (publishPoseRef.current) {
+            setPose(overlayRef.current.pose);
+          }
           onPoseRef.current?.(overlayRef.current.pose);
         }
       } catch (err) {
@@ -98,10 +161,10 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart 
     const overlay = overlayRef.current;
     if (overlay?.landmarks) {
       drawStickFigure(ctx, overlay.landmarks, {
-        width,
-        height,
+        width: bitmap.width,
+        height: bitmap.height,
         mirror: true,
-        angles: overlay.pose,
+        angles: annotateRef.current ? overlay.pose : undefined,
       });
     }
 
@@ -151,11 +214,26 @@ export const usePoseCamera = ({ videoRef, canvasRef, onPose, onFrame, autoStart 
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     lastVideoTimeRef.current = -1;
+    bitmapRef.current = null;
     overlayRef.current = null;
     smootherRef.current.reset();
     setPose(emptyPose);
     setStatus("idle");
   }, [canvasRef, releaseStream, stopLoop]);
+
+  useEffect(() => {
+    const invalidate = () => {
+      bitmapRef.current = null;
+    };
+    window.addEventListener("resize", invalidate);
+    document.addEventListener("fullscreenchange", invalidate);
+    document.addEventListener("webkitfullscreenchange", invalidate);
+    return () => {
+      window.removeEventListener("resize", invalidate);
+      document.removeEventListener("fullscreenchange", invalidate);
+      document.removeEventListener("webkitfullscreenchange", invalidate);
+    };
+  }, []);
 
   const didAutoStartRef = useRef(false);
   useEffect(() => {
